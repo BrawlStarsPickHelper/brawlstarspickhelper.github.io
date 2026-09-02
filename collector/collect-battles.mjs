@@ -65,15 +65,12 @@ function makeBattleHash(battleTimeISO, tags) {
   return crypto.createHash("sha256").update(`${battleTimeISO}|${sorted}`).digest("hex");
 }
 
-function inferResult(player, battle) {
-  // 경쟁전(ranked)은 battle.result가 없을 수 있어 trophyChange로 유추
-  if (player.result) return player.result; // 'victory' | 'defeat' | 'draw'
-  if (typeof battle.trophyChange === "number") {
-    if (battle.trophyChange > 0) return "victory";
-    if (battle.trophyChange < 0) return "defeat";
-    return "draw";
-  }
-  return null;
+function resultForTeam(teamIdx, sourceTeamIdx, battleResult) {
+  if (battleResult == null) return null;
+  const sameTeam = teamIdx === sourceTeamIdx;
+  if (battleResult === "draw") return "draw";
+  if (sameTeam) return battleResult; // 소스 태그가 속한 팀은 배틀 결과 그대로
+  return battleResult === "victory" ? "defeat" : "victory"; // 반대 팀은 반대 결과
 }
 
 async function upsertBrawler(brawler) {
@@ -140,6 +137,11 @@ async function processBattle(battle, sourceTag, sourceRankedRank) {
 
   if (battleErr || !battleRow) return;
 
+  // 소스 태그가 속한 팀 인덱스를 찾아서, 팀별로 승/패를 정확히 나눔
+  const sourceTeamIdx = battleInfo.teams.findIndex((team) =>
+    team.some((p) => p.tag === sourceTag)
+  );
+
   // 참가자 6명 insert
   const participantRows = battleInfo.teams.flatMap((team, teamIdx) =>
     team.map((p) => ({
@@ -147,8 +149,8 @@ async function processBattle(battle, sourceTag, sourceRankedRank) {
       player_tag: p.tag,
       brawler_id: p.brawler?.id,
       team: teamIdx,
-      result: inferResult(p, battleInfo),
-      trophy_change: battleInfo.trophyChange ?? null,
+      result: resultForTeam(teamIdx, sourceTeamIdx, battleInfo.result),
+      trophy_change: p.tag === sourceTag ? battleInfo.trophyChange ?? null : null,
     }))
   );
 
