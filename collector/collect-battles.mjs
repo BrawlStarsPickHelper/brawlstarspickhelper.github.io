@@ -78,6 +78,8 @@ async function queueNewTags(tags) {
   await supabase.from("player_tags").upsert(rows, { onConflict: "tag", ignoreDuplicates: true });
 }
 
+let DEBUG_LOGGED = false; // 실행마다 딱 1번만 원본 JSON 출력
+
 async function processBattle(battle, sourceTag) {
   const event = battle.event ?? {};
   const battleInfo = battle.battle ?? {};
@@ -85,6 +87,15 @@ async function processBattle(battle, sourceTag) {
   // 경쟁전(랭크)만, 그리고 팀 정보가 있는 3vs3 형태만 처리
   if (battleInfo.type !== "ranked") return;
   if (!Array.isArray(battleInfo.teams)) return;
+
+  // ⚠️ 디버그용: 랭크 단계를 나타내는 필드가 실제로 있는지 확인하기 위해
+  // 처음 발견한 ranked 배틀의 원본 JSON을 한 번만 통째로 출력함
+  if (!DEBUG_LOGGED) {
+    DEBUG_LOGGED = true;
+    console.log("=== RAW RANKED BATTLE JSON (디버그용, 확인 후 제거) ===");
+    console.log(JSON.stringify(battle, null, 2));
+    console.log("=== 끝 ===");
+  }
 
   const allPlayers = battleInfo.teams.flat();
   const tags = allPlayers.map((p) => p.tag);
