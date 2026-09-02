@@ -35,6 +35,7 @@ jobs:
           BS_API_KEY: ${{ secrets.BS_API_KEY }}
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
+          TAGS_PER_RUN: "200"
           MIN_RANK_LEVEL: ${{ secrets.MIN_RANK_LEVEL }} # 비워두면 기본값 13(신화 I) 사용
           # 스케줄 실행(cron)에는 inputs가 비어있으므로 자동으로 false가 됨
           DRY_RUN: ${{ inputs.dry_run }}
