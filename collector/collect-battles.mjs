@@ -1,33 +1,33 @@
 // =========================================================
-// 브롤스타즈 경쟁전(솔로 랭크, 신화 이상) 배틀로그 수집 스크립트
+// 브롤스타즈 신화 이상 경쟁전 배틀로그 수집 스크립트
 // GitHub Actions에서 주기적으로 실행하는 것을 전제로 작성됨
 // =========================================================
 import { createClient } from "@supabase/supabase-js";
 import crypto from "node:crypto";
 
 // ---- 설정값 ------------------------------------------------
+// RoyaleAPI 프록시 사용: 발급받은 API 키의 화이트리스트 IP를
+// 45.79.218.79 로 등록해두면, 아래처럼 도메인만 바꿔서 호출 가능
 const BS_BASE = "https://bsproxy.royaleapi.dev/v1";
 
-// DRY_RUN=true 이면 DB에 아무것도 쓰지 않고, soloRanked 배틀의 원본 JSON을
-// 콘솔에 몇 개만 찍고 끝냄. "신화 이상" 판별에 쓸 정확한 필드/점수 값을
-// 확인하기 전까지는 이 모드로만 돌려서 데이터 오염을 막는다.
-const DRY_RUN = process.env.DRY_RUN === "true";
-const DRY_RUN_SAMPLE_LIMIT = 3;
+// ⚠️ 신화 랭크 트로피 레벨 임계값입니다. 정확한 값은 실제 배틀로그
+// (teams[].brawler.trophies)를 몇 개 찍어보고 확인 후 채워넣으세요.
+// (경쟁전 개편으로 시즌마다 바뀔 수 있어 하드코딩 대신 env로 뺐습니다)
+const MIN_RANK_TROPHY = Number(process.env.MIN_RANK_TROPHY ?? 19);
 
 // 한 번 실행에서 처리할 태그 수 (API 레이트리밋 고려해서 보수적으로)
 const TAGS_PER_RUN = Number(process.env.TAGS_PER_RUN ?? 50);
 
 // ---- 클라이언트 초기화 --------------------------------------
-const supabase = DRY_RUN
-  ? null
-  : createClient(
-      process.env.SUPABASE_URL,
-      process.env.SUPABASE_SERVICE_KEY // service_role 키 (RLS 무시하고 씀)
-    );
+const supabase = createClient(
+  process.env.SUPABASE_URL,
+  process.env.SUPABASE_SERVICE_KEY // service_role 키 (RLS 무시하고 씀)
+);
 
 const BS_API_KEY = process.env.BS_API_KEY;
 
 function encodeTag(tag) {
+  // '#ABCDEF' -> '%23ABCDEF'
   return encodeURIComponent(tag.startsWith("#") ? tag : `#${tag}`);
 }
 
@@ -35,7 +35,7 @@ async function fetchBattleLog(tag) {
   const res = await fetch(`${BS_BASE}/players/${encodeTag(tag)}/battlelog`, {
     headers: { Authorization: `Bearer ${BS_API_KEY}` },
   });
-  if (res.status === 404) return null;
+  if (res.status === 404) return null; // 태그가 사라졌거나 오탈자
   if (!res.ok) {
     console.warn(`[warn] ${tag} battlelog fetch failed: ${res.status}`);
     return null;
@@ -49,40 +49,15 @@ function makeBattleHash(battleTimeISO, tags) {
   return crypto.createHash("sha256").update(`${battleTimeISO}|${sorted}`).digest("hex");
 }
 
-// =========================================================
-// 경쟁전 랭크 단계 판별
-//
-// DRY_RUN으로 확인한 실제 배틀로그: teams[][].brawler.trophies 값이
-// 1~22 사이의 "랭크 서수"로 나온다 (누적 트로피가 아님, 경쟁전에서는
-// 트로피가 오르내리지 않으므로 이 자리를 랭크 단계 표시로 재사용하는 것).
-//
-// 커뮤니티 집계 기준(Brawlytix) 매핑:
-//   1-3 브론즈 / 4-6 실버 / 7-9 골드 / 10-12 다이아몬드 /
-//   13-15 신화 / 16-18 전설 / 19-21 마스터즈 / 22 프로
-//
-// "전설 III 이상"은 이 값이 18 이상인 경우 (16=전설I, 17=전설II, 18=전설III).
-// =========================================================
-const MIN_RANK_LEVEL = Number(process.env.MIN_RANK_LEVEL || 18); // 전설 III = 18
-// ⚠️ ??가 아니라 || 사용: GitHub Secret이 "빈 문자열"로 등록되면 ??는 그걸
-// 그대로 통과시켜 Number("") === 0 이 되어 필터가 무력화된다. ||는 빈 문자열도
-// falsy로 취급해 기본값으로 넘어가므로 더 안전함 (랭크 단계는 0이 될 일이 없음).
-
-function extractRankScore(battleInfo, sourceTag) {
-  const allPlayers = (battleInfo.teams ?? []).flat();
-  const sourcePlayer = allPlayers.find((p) => p.tag === sourceTag);
-  const level = sourcePlayer?.brawler?.trophies;
-  return typeof level === "number" ? level : null;
-}
-
-function resultForTeam(battleInfo, teamIdx, sourceTeamIdx) {
-  // battle.result는 "조회한 플레이어(sourceTag)의 팀" 기준 승/패/무 이다.
-  // 팀 인덱스가 다르면 반대 결과를 준다.
-  const base = battleInfo.result;
-  if (!base) return null;
-  if (base === "draw") return "draw";
-  if (sourceTeamIdx === -1) return null; // 소속 팀을 못 찾으면 결과 불확실 -> null
-  if (teamIdx === sourceTeamIdx) return base;
-  return base === "victory" ? "defeat" : "victory";
+function inferResult(player, battle) {
+  // 경쟁전(ranked)은 battle.result가 없을 수 있어 trophyChange로 유추
+  if (player.result) return player.result; // 'victory' | 'defeat' | 'draw'
+  if (typeof battle.trophyChange === "number") {
+    if (battle.trophyChange > 0) return "victory";
+    if (battle.trophyChange < 0) return "defeat";
+    return "draw";
+  }
+  return null;
 }
 
 async function upsertBrawler(brawler) {
@@ -103,51 +78,57 @@ async function queueNewTags(tags) {
   await supabase.from("player_tags").upsert(rows, { onConflict: "tag", ignoreDuplicates: true });
 }
 
-let dryRunSampleCount = 0;
-
-const stats = {
-  totalBattles: 0,
-  notSoloRanked: 0,
-  rankUnknown: 0,
-  belowThreshold: 0,
-  saved: 0,
-};
+let DEBUG_LOGGED = false; // 실행마다 딱 1번만 원본 JSON 출력
 
 async function processBattle(battle, sourceTag) {
-  stats.totalBattles++;
   const event = battle.event ?? {};
   const battleInfo = battle.battle ?? {};
 
-  // 경쟁전 "솔로 랭크"만 처리. 팀 랭크(teamRanked)는 별도로 필요하면 나중에 추가.
-  if (battleInfo.type !== "soloRanked") {
-    stats.notSoloRanked++;
-    return;
-  }
+  // 경쟁전(랭크)만, 그리고 팀 정보가 있는 3vs3 형태만 처리
+  if (battleInfo.type !== "ranked") return;
   if (!Array.isArray(battleInfo.teams)) return;
 
-  if (DRY_RUN) {
-    if (dryRunSampleCount >= DRY_RUN_SAMPLE_LIMIT) return;
-    dryRunSampleCount++;
-    console.log(`=== [DRY_RUN] soloRanked 원본 JSON 샘플 #${dryRunSampleCount} ===`);
+  // ⚠️ 디버그용: 랭크 단계를 나타내는 필드가 실제로 있는지 확인하기 위해
+  // 처음 발견한 ranked 배틀의 원본 JSON을 한 번만 통째로 출력함
+  if (!DEBUG_LOGGED) {
+    DEBUG_LOGGED = true;
+    console.log("=== RAW RANKED BATTLE JSON (디버그용, 확인 후 제거) ===");
     console.log(JSON.stringify(battle, null, 2));
     console.log("=== 끝 ===");
-    return; // DB에 아무것도 쓰지 않음
+
+    // 배틀로그의 trophies가 "평생 누적 트로피"인지 "경쟁전 전용 점수"인지
+    // 확인하기 위해, 스타 플레이어의 실제 프로필과 대조
+    try {
+      const starTag = battleInfo.starPlayer?.tag;
+      const starBrawlerId = battleInfo.starPlayer?.brawler?.id;
+      const battleLogTrophies = battleInfo.starPlayer?.brawler?.trophies;
+      if (starTag && starBrawlerId != null) {
+        const profileRes = await fetch(`${BS_BASE}/players/${encodeTag(starTag)}`, {
+          headers: { Authorization: `Bearer ${BS_API_KEY}` },
+        });
+        if (profileRes.ok) {
+          const profile = await profileRes.json();
+          const matched = profile.brawlers?.find((b) => b.id === starBrawlerId);
+          console.log("=== 프로필 대조 (디버그용) ===");
+          console.log(`배틀로그 trophies: ${battleLogTrophies}`);
+          console.log(`프로필상 평생 trophies: ${matched?.trophies}`);
+          console.log(`프로필상 highestTrophies: ${matched?.highestTrophies}`);
+          console.log("=== 끝 ===");
+        } else {
+          console.warn(`[warn] 프로필 조회 실패: ${profileRes.status}`);
+        }
+      }
+    } catch (e) {
+      console.warn("[warn] 프로필 대조 실패:", e.message);
+    }
   }
 
   const allPlayers = battleInfo.teams.flat();
   const tags = allPlayers.map((p) => p.tag);
 
-  const rankLevel = extractRankScore(battleInfo, sourceTag);
-  if (rankLevel === null) {
-    // sourceTag가 이 배틀 참가자 목록에서 안 보이는 등 이례적인 경우 -> 안전하게 건너뜀
-    stats.rankUnknown++;
-    console.warn(`[skip] ${sourceTag}의 랭크 단계를 찾지 못해 저장하지 않음`);
-    return;
-  }
-  if (rankLevel < MIN_RANK_LEVEL) {
-    stats.belowThreshold++;
-    return; // 기준 미만은 저장하지 않음
-  }
+  // 신화 이상 필터: 이 배틀에 참여한 브롤러들의 trophies로 판단
+  const maxTrophy = Math.max(...allPlayers.map((p) => p.brawler?.trophies ?? 0));
+  if (maxTrophy < MIN_RANK_TROPHY) return;
 
   const battleTimeISO = new Date(
     battle.battleTime.replace(
@@ -158,11 +139,13 @@ async function processBattle(battle, sourceTag) {
 
   const battleHash = makeBattleHash(battleTimeISO, tags);
 
+  // 브롤러/맵 참조 테이블 채우기
   for (const p of allPlayers) {
     if (p.brawler) await upsertBrawler(p.brawler);
   }
   await upsertMap(event.id, event.map, battleInfo.mode ?? event.mode);
 
+  // battles insert (이미 있으면 건너뜀)
   const { data: battleRow, error: battleErr } = await supabase
     .from("battles")
     .upsert(
@@ -171,7 +154,7 @@ async function processBattle(battle, sourceTag) {
         battle_time: battleTimeISO,
         mode: battleInfo.mode ?? event.mode,
         map_id: event.id ?? null,
-        trophy_level: rankLevel, // 이제 트로피가 아니라 경쟁전 랭크 서수(1~22)를 저장함
+        trophy_level: maxTrophy,
       },
       { onConflict: "battle_hash" }
     )
@@ -180,19 +163,15 @@ async function processBattle(battle, sourceTag) {
 
   if (battleErr || !battleRow) return;
 
-  const sourceTeamIdx = battleInfo.teams.findIndex((team) =>
-    team.some((p) => p.tag === sourceTag)
-  );
-
+  // 참가자 6명 insert
   const participantRows = battleInfo.teams.flatMap((team, teamIdx) =>
     team.map((p) => ({
       battle_id: battleRow.id,
       player_tag: p.tag,
       brawler_id: p.brawler?.id,
       team: teamIdx,
-      result: resultForTeam(battleInfo, teamIdx, sourceTeamIdx),
-      // trophyChange는 조회한 태그(sourceTag) 기준 값이라, 그 행에만 의미가 있음
-      trophy_change: p.tag === sourceTag ? battleInfo.trophyChange ?? null : null,
+      result: inferResult(p, battleInfo),
+      trophy_change: battleInfo.trophyChange ?? null,
     }))
   );
 
@@ -200,38 +179,46 @@ async function processBattle(battle, sourceTag) {
     .from("battle_participants")
     .upsert(participantRows, { onConflict: "battle_id,player_tag", ignoreDuplicates: true });
 
-  stats.saved++;
+  // 크롤링 확장: 이번 경기에 나온 태그들을 다음 수집 대상 큐에 추가
   await queueNewTags(tags.filter((t) => t !== sourceTag));
 }
 
-async function main() {
-  if (DRY_RUN) {
-    console.log("=== DRY_RUN 모드: DB에 쓰지 않고 soloRanked 원본 JSON만 출력합니다 ===");
+async function updateCurrentRotation() {
+  const res = await fetch(`${BS_BASE}/events/rotation`, {
+    headers: { Authorization: `Bearer ${BS_API_KEY}` },
+  });
+  if (!res.ok) {
+    console.warn(`[warn] 로테이션 조회 실패: ${res.status}`);
+    return;
   }
+  const events = await res.json();
+  for (const e of events) {
+    const map = e.event ?? e; // 응답 형태 방어적으로 처리
+    if (!map?.id || !map?.mode) continue;
+    await upsertMap(map.id, map.map, map.mode);
+    await supabase
+      .from("current_rotation")
+      .upsert({ mode: map.mode, map_id: map.id, updated_at: new Date().toISOString() }, { onConflict: "mode" });
+  }
+}
 
-  const tagSource = DRY_RUN ? [{ tag: process.env.DRY_RUN_TAG }] : null;
+async function main() {
+  await updateCurrentRotation();
 
-  const queue = tagSource
-    ? tagSource
-    : (
-        await supabase
-          .from("player_tags")
-          .select("tag")
-          .order("last_checked_at", { ascending: true, nullsFirst: true })
-          .limit(TAGS_PER_RUN)
-      ).data ?? [];
+  const { data: queue, error } = await supabase
+    .from("player_tags")
+    .select("tag")
+    .order("last_checked_at", { ascending: true, nullsFirst: true })
+    .limit(TAGS_PER_RUN);
 
-  if (!DRY_RUN && queue.length === 0) {
-    console.warn(
-      "player_tags 테이블이 비어있습니다. 최소 1개 이상의 태그를 직접 넣어서 크롤링을 시작해야 합니다 " +
-        "(예: insert into player_tags (tag) values ('#YOUR_TAG');)"
-    );
+  if (error) {
+    console.error("player_tags 조회 실패:", error);
+    process.exit(1);
   }
 
   console.log(`이번 실행 대상 태그 ${queue.length}개`);
 
   for (const { tag } of queue) {
-    if (!tag) continue;
     const battles = await fetchBattleLog(tag);
     if (battles) {
       for (const battle of battles) {
@@ -242,23 +229,13 @@ async function main() {
         }
       }
     }
-    if (!DRY_RUN) {
-      await supabase
-        .from("player_tags")
-        .update({ last_checked_at: new Date().toISOString() })
-        .eq("tag", tag);
-    }
-    if (DRY_RUN && dryRunSampleCount >= DRY_RUN_SAMPLE_LIMIT) break;
+    await supabase
+      .from("player_tags")
+      .update({ last_checked_at: new Date().toISOString() })
+      .eq("tag", tag);
   }
 
   console.log("수집 완료");
-  if (!DRY_RUN) {
-    console.log(
-      `[요약] 조회한 배틀 ${stats.totalBattles}개 | soloRanked 아님 ${stats.notSoloRanked}개 | ` +
-        `랭크단계 불명 ${stats.rankUnknown}개 | 기준(${MIN_RANK_LEVEL}) 미만이라 제외 ${stats.belowThreshold}개 | ` +
-        `실제 저장 ${stats.saved}개`
-    );
-  }
 }
 
 main();
