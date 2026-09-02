@@ -93,6 +93,8 @@ async function queueNewTags(tags) {
 
 let DIAG_rankedTypeCount = 0;
 let DIAG_zeroTrophyChangeCount = 0;
+let DIAG_loggedZero = false;
+let DIAG_loggedNonZero = false;
 
 async function processBattle(battle, sourceTag, sourceRankedRank) {
   const event = battle.event ?? {};
@@ -102,6 +104,21 @@ async function processBattle(battle, sourceTag, sourceRankedRank) {
   if (battleInfo.type !== "ranked") return;
   if (!Array.isArray(battleInfo.teams)) return;
   DIAG_rankedTypeCount++;
+
+  // ⚠️ 디버그용: trophyChange 유무별로 배틀 구조가 다른지 비교
+  if (battleInfo.trophyChange && !DIAG_loggedNonZero) {
+    DIAG_loggedNonZero = true;
+    console.log("=== trophyChange 있는 배틀 샘플 ===");
+    console.log(JSON.stringify(battle, null, 2));
+    console.log("=== 끝 ===");
+  }
+  if (!battleInfo.trophyChange && !DIAG_loggedZero) {
+    DIAG_loggedZero = true;
+    console.log("=== trophyChange 없는(0) 배틀 샘플 ===");
+    console.log(JSON.stringify(battle, null, 2));
+    console.log("=== 끝 ===");
+  }
+
   // 진짜 경쟁전 모드는 트로피가 전혀 변동되지 않음. trophyChange가 0이 아니면
   // (구)일반 트로피 매칭인데 type만 "ranked"로 찍힌 경우이므로 제외.
   if (battleInfo.trophyChange) return;
