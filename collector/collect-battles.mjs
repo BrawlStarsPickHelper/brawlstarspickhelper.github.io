@@ -35,6 +35,15 @@ function encodeTag(tag) {
   return encodeURIComponent(tag.startsWith("#") ? tag : `#${tag}`);
 }
 
+async function loadRankedMapWhitelist() {
+  const { data, error } = await supabase.from("ranked_map_whitelist").select("mode,map_name");
+  if (error) {
+    console.warn("[warn] 맵 화이트리스트 조회 실패:", error.message);
+    return new Set();
+  }
+  return new Set(data.map((r) => `${r.mode}::${r.map_name}`));
+}
+
 async function fetchProfile(tag) {
   const res = await fetch(`${BS_BASE}/players/${encodeTag(tag)}`, {
     headers: { Authorization: `Bearer ${BS_API_KEY}` },
@@ -91,7 +100,7 @@ async function queueNewTags(tags) {
   await supabase.from("player_tags").upsert(rows, { onConflict: "tag", ignoreDuplicates: true });
 }
 
-async function processBattle(battle, sourceTag, sourceRankedRank) {
+async function processBattle(battle, sourceTag, sourceRankedRank, mapWhitelist) {
   const event = battle.event ?? {};
   const battleInfo = battle.battle ?? {};
 
@@ -101,6 +110,9 @@ async function processBattle(battle, sourceTag, sourceRankedRank) {
   // 진짜 경쟁전 모드는 트로피가 전혀 변동되지 않아 trophyChange 필드 자체가 없음.
   // 필드가 있으면(=일반 트로피 매칭인데 type만 ranked로 찍힌 경우) 제외.
   if (battleInfo.trophyChange) return;
+  // 실제 경쟁전에 나오는 맵인지 화이트리스트로 한 번 더 검증
+  const mode = battleInfo.mode ?? event.mode;
+  if (!mapWhitelist.has(`${mode}::${event.map}`)) return;
 
   const allPlayers = battleInfo.teams.flat();
   const tags = allPlayers.map((p) => p.tag);
@@ -187,6 +199,7 @@ async function updateCurrentRotation() {
 
 async function main() {
   await updateCurrentRotation();
+  const mapWhitelist = await loadRankedMapWhitelist();
 
   const { data: queue, error } = await supabase
     .from("player_tags")
@@ -217,7 +230,7 @@ async function main() {
       if (battles) {
         for (const battle of battles) {
           try {
-            await processBattle(battle, tag, rankedRank);
+            await processBattle(battle, tag, rankedRank, mapWhitelist);
           } catch (e) {
             console.warn(`[warn] battle 처리 실패 (${tag}):`, e.message);
           }
