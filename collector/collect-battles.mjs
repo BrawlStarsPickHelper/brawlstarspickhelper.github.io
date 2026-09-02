@@ -111,8 +111,7 @@ async function processBattle(battle, sourceTag) {
           const matched = profile.brawlers?.find((b) => b.id === starBrawlerId);
           console.log("=== 프로필 대조 (디버그용) ===");
           console.log(`배틀로그 trophies: ${battleLogTrophies}`);
-          console.log(`프로필상 평생 trophies: ${matched?.trophies}`);
-          console.log(`프로필상 highestTrophies: ${matched?.highestTrophies}`);
+          console.log("프로필 최상위 레벨 전체 필드:", JSON.stringify(profile, null, 2));
           console.log("=== 끝 ===");
         } else {
           console.warn(`[warn] 프로필 조회 실패: ${profileRes.status}`);
