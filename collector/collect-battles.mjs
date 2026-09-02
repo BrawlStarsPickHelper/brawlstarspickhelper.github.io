@@ -60,9 +60,12 @@ function makeBattleHash(battleTimeISO, tags) {
 //   1-3 브론즈 / 4-6 실버 / 7-9 골드 / 10-12 다이아몬드 /
 //   13-15 신화 / 16-18 전설 / 19-21 마스터즈 / 22 프로
 //
-// "마스터즈 이상"은 이 값이 19 이상인 경우.
+// "전설 III 이상"은 이 값이 18 이상인 경우 (16=전설I, 17=전설II, 18=전설III).
 // =========================================================
-const MIN_RANK_LEVEL = Number(process.env.MIN_RANK_LEVEL ?? 18); // 마스터즈 I = 19
+const MIN_RANK_LEVEL = Number(process.env.MIN_RANK_LEVEL || 18); // 전설 III = 18
+// ⚠️ ??가 아니라 || 사용: GitHub Secret이 "빈 문자열"로 등록되면 ??는 그걸
+// 그대로 통과시켜 Number("") === 0 이 되어 필터가 무력화된다. ||는 빈 문자열도
+// falsy로 취급해 기본값으로 넘어가므로 더 안전함 (랭크 단계는 0이 될 일이 없음).
 
 function extractRankScore(battleInfo, sourceTag) {
   const allPlayers = (battleInfo.teams ?? []).flat();
