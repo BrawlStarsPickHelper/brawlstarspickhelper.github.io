@@ -108,10 +108,18 @@ async function processBattle(battle, sourceTag) {
         });
         if (profileRes.ok) {
           const profile = await profileRes.json();
-          const matched = profile.brawlers?.find((b) => b.id === starBrawlerId);
-          console.log("=== 프로필 대조 (디버그용) ===");
-          console.log(`배틀로그 trophies: ${battleLogTrophies}`);
-          console.log("프로필 최상위 레벨 전체 필드:", JSON.stringify(profile, null, 2));
+          console.log("=== 프로필 랭크 필드 (디버그용) ===");
+          console.log({
+            rankedSeasonId: profile.rankedSeasonId,
+            rankedRank: profile.rankedRank,
+            rankedRankName: profile.rankedRankName,
+            rankedElo: profile.rankedElo,
+            highestSeasonRankedRank: profile.highestSeasonRankedRank,
+            highestSeasonRankedRankName: profile.highestSeasonRankedRankName,
+            highestSeasonRankedElo: profile.highestSeasonRankedElo,
+            highestAllTimeRankedRank: profile.highestAllTimeRankedRank,
+            highestAllTimeRankedRankName: profile.highestAllTimeRankedRankName,
+          });
           console.log("=== 끝 ===");
         } else {
           console.warn(`[warn] 프로필 조회 실패: ${profileRes.status}`);
