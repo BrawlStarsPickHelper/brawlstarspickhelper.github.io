@@ -1,0 +1,15 @@
+{
+  "name": "brawl-rank-collector",
+  "version": "1.0.0",
+  "description": "브롤스타즈 신화 이상 경쟁전 배틀로그 수집 -> Supabase 적재",
+  "type": "module",
+  "scripts": {
+    "collect": "node collect-battles.mjs"
+  },
+  "dependencies": {
+    "@supabase/supabase-js": "^2.45.4"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}
