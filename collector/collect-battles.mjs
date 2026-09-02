@@ -62,7 +62,7 @@ function makeBattleHash(battleTimeISO, tags) {
 //
 // "마스터즈 이상"은 이 값이 19 이상인 경우.
 // =========================================================
-const MIN_RANK_LEVEL = Number(process.env.MIN_RANK_LEVEL ?? 19); // 마스터즈 I = 19
+const MIN_RANK_LEVEL = Number(process.env.MIN_RANK_LEVEL ?? 18); // 마스터즈 I = 19
 
 function extractRankScore(battleInfo, sourceTag) {
   const allPlayers = (battleInfo.teams ?? []).flat();
@@ -102,12 +102,24 @@ async function queueNewTags(tags) {
 
 let dryRunSampleCount = 0;
 
+const stats = {
+  totalBattles: 0,
+  notSoloRanked: 0,
+  rankUnknown: 0,
+  belowThreshold: 0,
+  saved: 0,
+};
+
 async function processBattle(battle, sourceTag) {
+  stats.totalBattles++;
   const event = battle.event ?? {};
   const battleInfo = battle.battle ?? {};
 
   // 경쟁전 "솔로 랭크"만 처리. 팀 랭크(teamRanked)는 별도로 필요하면 나중에 추가.
-  if (battleInfo.type !== "soloRanked") return;
+  if (battleInfo.type !== "soloRanked") {
+    stats.notSoloRanked++;
+    return;
+  }
   if (!Array.isArray(battleInfo.teams)) return;
 
   if (DRY_RUN) {
@@ -125,10 +137,14 @@ async function processBattle(battle, sourceTag) {
   const rankLevel = extractRankScore(battleInfo, sourceTag);
   if (rankLevel === null) {
     // sourceTag가 이 배틀 참가자 목록에서 안 보이는 등 이례적인 경우 -> 안전하게 건너뜀
+    stats.rankUnknown++;
     console.warn(`[skip] ${sourceTag}의 랭크 단계를 찾지 못해 저장하지 않음`);
     return;
   }
-  if (rankLevel < MIN_RANK_LEVEL) return; // 마스터즈(19) 미만은 저장하지 않음
+  if (rankLevel < MIN_RANK_LEVEL) {
+    stats.belowThreshold++;
+    return; // 기준 미만은 저장하지 않음
+  }
 
   const battleTimeISO = new Date(
     battle.battleTime.replace(
@@ -181,6 +197,7 @@ async function processBattle(battle, sourceTag) {
     .from("battle_participants")
     .upsert(participantRows, { onConflict: "battle_id,player_tag", ignoreDuplicates: true });
 
+  stats.saved++;
   await queueNewTags(tags.filter((t) => t !== sourceTag));
 }
 
@@ -232,6 +249,13 @@ async function main() {
   }
 
   console.log("수집 완료");
+  if (!DRY_RUN) {
+    console.log(
+      `[요약] 조회한 배틀 ${stats.totalBattles}개 | soloRanked 아님 ${stats.notSoloRanked}개 | ` +
+        `랭크단계 불명 ${stats.rankUnknown}개 | 기준(${MIN_RANK_LEVEL}) 미만이라 제외 ${stats.belowThreshold}개 | ` +
+        `실제 저장 ${stats.saved}개`
+    );
+  }
 }
 
 main();
