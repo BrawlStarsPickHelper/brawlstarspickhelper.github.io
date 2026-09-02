@@ -1,5 +1,5 @@
 # 이 파일은 저장소의 .github/workflows/collect.yml 경로에 넣어야 동작합니다.
-name: Collect Brawl Stars Ranked Battles
+name: .github/workflows/collect.yml
 
 on:
   schedule:
