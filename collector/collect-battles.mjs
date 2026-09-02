@@ -109,17 +109,9 @@ async function processBattle(battle, sourceTag) {
         if (profileRes.ok) {
           const profile = await profileRes.json();
           console.log("=== 프로필 랭크 필드 (디버그용) ===");
-          console.log({
-            rankedSeasonId: profile.rankedSeasonId,
-            rankedRank: profile.rankedRank,
-            rankedRankName: profile.rankedRankName,
-            rankedElo: profile.rankedElo,
-            highestSeasonRankedRank: profile.highestSeasonRankedRank,
-            highestSeasonRankedRankName: profile.highestSeasonRankedRankName,
-            highestSeasonRankedElo: profile.highestSeasonRankedElo,
-            highestAllTimeRankedRank: profile.highestAllTimeRankedRank,
-            highestAllTimeRankedRankName: profile.highestAllTimeRankedRankName,
-          });
+          console.log(`rankedRank: ${profile.rankedRank}`);
+          console.log(`rankedRankName: ${JSON.stringify(profile.rankedRankName)}`);
+          console.log(`rankedElo: ${profile.rankedElo}`);
           console.log("=== 끝 ===");
         } else {
           console.warn(`[warn] 프로필 조회 실패: ${profileRes.status}`);
