@@ -1,9 +1,9 @@
 // =========================================================
-// 리더보드(글로벌 랭킹) 기반으로 player_tags 큐에 대량 시드 추가
+// 리더보드(글로벌+국가별 랭킹) 기반으로 player_tags 큐에 대량 시드 추가
 // 한 번(또는 가끔) 수동으로 실행하는 스크립트입니다.
 // - 글로벌 상위 200명
-// - 브롤러별 상위 200명 (전체 브롤러 대상)
-// 상위 200명은 사실상 마스터~프로급이 확실해서 전설3+ 통과율이 높습니다.
+// - 브롤러별 글로벌 상위 200명 (전체 브롤러 대상)
+// - 국가별 상위 200명 (주요 국가들)
 // =========================================================
 import { createClient } from "@supabase/supabase-js";
 
@@ -14,6 +14,9 @@ const supabase = createClient(
   process.env.SUPABASE_URL,
   process.env.SUPABASE_SERVICE_KEY
 );
+
+// 주요 국가 코드 (필요하면 더 추가/삭제 가능)
+const COUNTRY_CODES = ["KR", "JP", "US", "GB", "DE", "FR", "IT", "ES", "NL", "PL", "TR", "SE", "IN"];
 
 async function fetchJSON(path) {
   const res = await fetch(`${BS_BASE}${path}`, {
@@ -47,7 +50,20 @@ async function main() {
     console.log(`글로벌 상위 ${tags.length}명 큐에 추가`);
   }
 
-  // 2) 브롤러 목록 조회 후, 브롤러별 상위 200명씩
+  // 2) 국가별 상위 200명
+  console.log(`국가별 랭킹 조회 시작 (${COUNTRY_CODES.length}개국)`);
+  for (const cc of COUNTRY_CODES) {
+    const ranking = await fetchJSON(`/rankings/${cc}/players`);
+    if (ranking?.items) {
+      const tags = ranking.items.map((p) => p.tag);
+      await queueTags(tags);
+      totalAdded += tags.length;
+      console.log(`  ${cc}: ${tags.length}명 추가`);
+    }
+    await new Promise((r) => setTimeout(r, 150));
+  }
+
+  // 3) 브롤러 목록 조회 후, 브롤러별 글로벌 상위 200명씩
   const brawlersRes = await fetchJSON("/brawlers");
   const brawlers = brawlersRes?.items ?? [];
   console.log(`브롤러 ${brawlers.length}종에 대해 브롤러별 랭킹 조회 시작`);
@@ -59,7 +75,6 @@ async function main() {
       await queueTags(tags);
       totalAdded += tags.length;
     }
-    // API 레이트리밋 배려용 약간의 딜레이
     await new Promise((r) => setTimeout(r, 150));
   }
 
