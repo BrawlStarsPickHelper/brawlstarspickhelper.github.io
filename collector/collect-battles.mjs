@@ -1,6 +1,11 @@
 // =========================================================
-// 브롤스타즈 신화 이상 경쟁전 배틀로그 수집 스크립트
+// 브롤스타즈 경쟁전(전설 3 이상) 배틀로그 수집 스크립트
 // GitHub Actions에서 주기적으로 실행하는 것을 전제로 작성됨
+//
+// 전설 3 이상 필터링 방식:
+// 각 태그의 프로필(/players/{tag})에서 rankedRank 필드를 확인해서
+// (18 = 전설 III, 그 이상이면 전설 3 이상) 통과한 플레이어의
+// 경쟁전 배틀만 수집한다.
 // =========================================================
 import { createClient } from "@supabase/supabase-js";
 import crypto from "node:crypto";
@@ -10,10 +15,9 @@ import crypto from "node:crypto";
 // 45.79.218.79 로 등록해두면, 아래처럼 도메인만 바꿔서 호출 가능
 const BS_BASE = "https://bsproxy.royaleapi.dev/v1";
 
-// ⚠️ 신화 랭크 트로피 레벨 임계값입니다. 정확한 값은 실제 배틀로그
-// (teams[].brawler.trophies)를 몇 개 찍어보고 확인 후 채워넣으세요.
-// (경쟁전 개편으로 시즌마다 바뀔 수 있어 하드코딩 대신 env로 뺐습니다)
-const MIN_RANK_TROPHY = Number(process.env.MIN_RANK_TROPHY ?? 19);
+// 전설 III = 18 (브론즈I~III=1~3, 실버=4~6, 골드=7~9, 다이아=10~12, 신화=13~15, 전설=16~18)
+// 실측으로 확인된 값. 시즌/패치로 바뀔 수 있으니 이상하면 재확인 필요.
+const MIN_RANKED_RANK = Number(process.env.MIN_RANKED_RANK ?? 18);
 
 // 한 번 실행에서 처리할 태그 수 (API 레이트리밋 고려해서 보수적으로)
 const TAGS_PER_RUN = Number(process.env.TAGS_PER_RUN ?? 50);
@@ -29,6 +33,18 @@ const BS_API_KEY = process.env.BS_API_KEY;
 function encodeTag(tag) {
   // '#ABCDEF' -> '%23ABCDEF'
   return encodeURIComponent(tag.startsWith("#") ? tag : `#${tag}`);
+}
+
+async function fetchProfile(tag) {
+  const res = await fetch(`${BS_BASE}/players/${encodeTag(tag)}`, {
+    headers: { Authorization: `Bearer ${BS_API_KEY}` },
+  });
+  if (res.status === 404) return null;
+  if (!res.ok) {
+    console.warn(`[warn] ${tag} 프로필 조회 실패: ${res.status}`);
+    return null;
+  }
+  return res.json();
 }
 
 async function fetchBattleLog(tag) {
@@ -78,9 +94,7 @@ async function queueNewTags(tags) {
   await supabase.from("player_tags").upsert(rows, { onConflict: "tag", ignoreDuplicates: true });
 }
 
-let DEBUG_LOGGED = false; // 실행마다 딱 1번만 원본 JSON 출력
-
-async function processBattle(battle, sourceTag) {
+async function processBattle(battle, sourceTag, sourceRankedRank) {
   const event = battle.event ?? {};
   const battleInfo = battle.battle ?? {};
 
@@ -88,46 +102,8 @@ async function processBattle(battle, sourceTag) {
   if (battleInfo.type !== "ranked") return;
   if (!Array.isArray(battleInfo.teams)) return;
 
-  // ⚠️ 디버그용: 랭크 단계를 나타내는 필드가 실제로 있는지 확인하기 위해
-  // 처음 발견한 ranked 배틀의 원본 JSON을 한 번만 통째로 출력함
-  if (!DEBUG_LOGGED) {
-    DEBUG_LOGGED = true;
-    console.log("=== RAW RANKED BATTLE JSON (디버그용, 확인 후 제거) ===");
-    console.log(JSON.stringify(battle, null, 2));
-    console.log("=== 끝 ===");
-
-    // 배틀로그의 trophies가 "평생 누적 트로피"인지 "경쟁전 전용 점수"인지
-    // 확인하기 위해, 스타 플레이어의 실제 프로필과 대조
-    try {
-      const starTag = battleInfo.starPlayer?.tag;
-      const starBrawlerId = battleInfo.starPlayer?.brawler?.id;
-      const battleLogTrophies = battleInfo.starPlayer?.brawler?.trophies;
-      if (starTag && starBrawlerId != null) {
-        const profileRes = await fetch(`${BS_BASE}/players/${encodeTag(starTag)}`, {
-          headers: { Authorization: `Bearer ${BS_API_KEY}` },
-        });
-        if (profileRes.ok) {
-          const profile = await profileRes.json();
-          console.log("=== 프로필 랭크 필드 (디버그용) ===");
-          console.log(`rankedRank: ${profile.rankedRank}`);
-          console.log(`rankedRankName: ${JSON.stringify(profile.rankedRankName)}`);
-          console.log(`rankedElo: ${profile.rankedElo}`);
-          console.log("=== 끝 ===");
-        } else {
-          console.warn(`[warn] 프로필 조회 실패: ${profileRes.status}`);
-        }
-      }
-    } catch (e) {
-      console.warn("[warn] 프로필 대조 실패:", e.message);
-    }
-  }
-
   const allPlayers = battleInfo.teams.flat();
   const tags = allPlayers.map((p) => p.tag);
-
-  // 신화 이상 필터: 이 배틀에 참여한 브롤러들의 trophies로 판단
-  const maxTrophy = Math.max(...allPlayers.map((p) => p.brawler?.trophies ?? 0));
-  if (maxTrophy < MIN_RANK_TROPHY) return;
 
   const battleTimeISO = new Date(
     battle.battleTime.replace(
@@ -145,6 +121,8 @@ async function processBattle(battle, sourceTag) {
   await upsertMap(event.id, event.map, battleInfo.mode ?? event.mode);
 
   // battles insert (이미 있으면 건너뜀)
+  // ranked_rank는 "이 배틀을 가져온 소스 플레이어"의 현재 rankedRank 스냅샷
+  // (매칭 상대까지 전부 조회하진 않으므로 근사치임)
   const { data: battleRow, error: battleErr } = await supabase
     .from("battles")
     .upsert(
@@ -153,7 +131,7 @@ async function processBattle(battle, sourceTag) {
         battle_time: battleTimeISO,
         mode: battleInfo.mode ?? event.mode,
         map_id: event.id ?? null,
-        trophy_level: maxTrophy,
+        ranked_rank: sourceRankedRank,
       },
       { onConflict: "battle_hash" }
     )
@@ -179,6 +157,7 @@ async function processBattle(battle, sourceTag) {
     .upsert(participantRows, { onConflict: "battle_id,player_tag", ignoreDuplicates: true });
 
   // 크롤링 확장: 이번 경기에 나온 태그들을 다음 수집 대상 큐에 추가
+  // (이후 실행에서 이 태그들도 프로필 조회 -> rankedRank 확인을 거쳐서 처리됨)
   await queueNewTags(tags.filter((t) => t !== sourceTag));
 }
 
@@ -217,23 +196,37 @@ async function main() {
 
   console.log(`이번 실행 대상 태그 ${queue.length}개`);
 
+  let skippedLowRank = 0;
+  let processedCount = 0;
+
   for (const { tag } of queue) {
-    const battles = await fetchBattleLog(tag);
-    if (battles) {
-      for (const battle of battles) {
-        try {
-          await processBattle(battle, tag);
-        } catch (e) {
-          console.warn(`[warn] battle 처리 실패 (${tag}):`, e.message);
+    const profile = await fetchProfile(tag);
+    const rankedRank = profile?.rankedRank ?? null;
+
+    // 전설 3 미만이면 이 태그의 배틀은 아예 수집하지 않음
+    if (rankedRank == null || rankedRank < MIN_RANKED_RANK) {
+      skippedLowRank++;
+    } else {
+      processedCount++;
+      const battles = await fetchBattleLog(tag);
+      if (battles) {
+        for (const battle of battles) {
+          try {
+            await processBattle(battle, tag, rankedRank);
+          } catch (e) {
+            console.warn(`[warn] battle 처리 실패 (${tag}):`, e.message);
+          }
         }
       }
     }
+
     await supabase
       .from("player_tags")
       .update({ last_checked_at: new Date().toISOString() })
       .eq("tag", tag);
   }
 
+  console.log(`전설3+ 통과: ${processedCount}명 / 미달로 스킵: ${skippedLowRank}명`);
   console.log("수집 완료");
 }
 
