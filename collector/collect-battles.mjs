@@ -91,6 +91,9 @@ async function queueNewTags(tags) {
   await supabase.from("player_tags").upsert(rows, { onConflict: "tag", ignoreDuplicates: true });
 }
 
+let DIAG_rankedTypeCount = 0;
+let DIAG_zeroTrophyChangeCount = 0;
+
 async function processBattle(battle, sourceTag, sourceRankedRank) {
   const event = battle.event ?? {};
   const battleInfo = battle.battle ?? {};
@@ -98,9 +101,11 @@ async function processBattle(battle, sourceTag, sourceRankedRank) {
   // 경쟁전(랭크)만, 그리고 팀 정보가 있는 3vs3 형태만 처리
   if (battleInfo.type !== "ranked") return;
   if (!Array.isArray(battleInfo.teams)) return;
+  DIAG_rankedTypeCount++;
   // 진짜 경쟁전 모드는 트로피가 전혀 변동되지 않음. trophyChange가 0이 아니면
   // (구)일반 트로피 매칭인데 type만 "ranked"로 찍힌 경우이므로 제외.
   if (battleInfo.trophyChange) return;
+  DIAG_zeroTrophyChangeCount++;
 
   const allPlayers = battleInfo.teams.flat();
   const tags = allPlayers.map((p) => p.tag);
@@ -232,6 +237,9 @@ async function main() {
   }
 
   console.log(`전설3+ 통과: ${processedCount}명 / 미달로 스킵: ${skippedLowRank}명`);
+  console.log(
+    `[진단] type=ranked 배틀: ${DIAG_rankedTypeCount}개 / 그 중 trophyChange=0(진짜 경쟁전): ${DIAG_zeroTrophyChangeCount}개`
+  );
   console.log("수집 완료");
 }
 
