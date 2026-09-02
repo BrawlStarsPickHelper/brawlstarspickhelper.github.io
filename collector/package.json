@@ -4,7 +4,8 @@
   "description": "브롤스타즈 신화 이상 경쟁전 배틀로그 수집 -> Supabase 적재",
   "type": "module",
   "scripts": {
-    "collect": "node collect-battles.mjs"
+    "collect": "node collect-battles.mjs",
+    "seed": "node seed-tags.mjs"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.45.4"
