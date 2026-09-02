@@ -98,6 +98,9 @@ async function processBattle(battle, sourceTag, sourceRankedRank) {
   // 경쟁전(랭크)만, 그리고 팀 정보가 있는 3vs3 형태만 처리
   if (battleInfo.type !== "ranked") return;
   if (!Array.isArray(battleInfo.teams)) return;
+  // 진짜 경쟁전 모드는 트로피가 전혀 변동되지 않음. trophyChange가 0이 아니면
+  // (구)일반 트로피 매칭인데 type만 "ranked"로 찍힌 경우이므로 제외.
+  if (battleInfo.trophyChange) return;
 
   const allPlayers = battleInfo.teams.flat();
   const tags = allPlayers.map((p) => p.tag);
