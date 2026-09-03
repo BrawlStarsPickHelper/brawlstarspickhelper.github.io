@@ -93,10 +93,10 @@ function resultForTeam(teamIdx, sourceTeamIdx, battleResult) {
   return battleResult === "victory" ? "defeat" : "victory"; // 반대 팀은 반대 결과
 }
 
-async function upsertBrawler(brawler) {
-  await supabase
-    .from("brawlers")
-    .upsert({ id: brawler.id, name: brawler.name }, { onConflict: "id", ignoreDuplicates: true });
+async function upsertBrawlers(brawlers) {
+  if (brawlers.length === 0) return;
+  const rows = brawlers.map((b) => ({ id: b.id, name: b.name }));
+  await supabase.from("brawlers").upsert(rows, { onConflict: "id", ignoreDuplicates: true });
 }
 
 async function upsertMap(mapId, mapName, mode) {
@@ -139,11 +139,12 @@ async function processBattle(battle, sourceTag, sourceRankedRank, mapWhitelist) 
 
   const battleHash = makeBattleHash(battleTimeISO, tags);
 
-  // 브롤러/맵 참조 테이블 채우기
-  for (const p of allPlayers) {
-    if (p.brawler) await upsertBrawler(p.brawler);
-  }
-  await upsertMap(event.id, event.map, battleInfo.mode ?? event.mode);
+  // 브롤러/맵 참조 테이블 채우기 (서로 독립적이라 병렬로 실행)
+  const brawlersInBattle = allPlayers.map((p) => p.brawler).filter(Boolean);
+  await Promise.all([
+    upsertBrawlers(brawlersInBattle),
+    upsertMap(event.id, event.map, battleInfo.mode ?? event.mode),
+  ]);
 
   // battles insert (이미 있으면 건너뜀)
   // ranked_rank는 "이 배틀을 가져온 소스 플레이어"의 현재 rankedRank 스냅샷
