@@ -111,32 +111,6 @@ async function queueNewTags(tags) {
   await supabase.from("player_tags").upsert(rows, { onConflict: "tag", ignoreDuplicates: true });
 }
 
-// 한 플레이어의 최근 25경기 안에서 정확히 똑같은 6명 조합이 두 번 이상 나오면
-// 친선(파워매치 등, 친구끼리 반복 플레이)일 가능성이 매우 높으므로 전부 제외.
-// (실제 랜덤 매칭에서 같은 6명이 다시 만날 확률은 사실상 0에 가까움)
-function excludeRepeatedRosters(battles) {
-  const rosterKeyOf = (battle) => {
-    const teams = battle.battle?.teams;
-    if (!Array.isArray(teams)) return null;
-    const allTags = teams.flat().map((p) => p.tag);
-    if (allTags.length !== 6) return null;
-    return [...allTags].sort().join(",");
-  };
-
-  const counts = new Map();
-  for (const battle of battles) {
-    const key = rosterKeyOf(battle);
-    if (!key) continue;
-    counts.set(key, (counts.get(key) ?? 0) + 1);
-  }
-
-  return battles.filter((battle) => {
-    const key = rosterKeyOf(battle);
-    if (!key) return true; // 팀 정보 없는 배틀은 어차피 processBattle에서 걸러짐
-    return counts.get(key) === 1; // 이 배치 안에서 딱 한 번만 나온 조합만 통과
-  });
-}
-
 async function processBattle(battle, sourceTag, sourceRankedRank, mapWhitelist) {
   const event = battle.event ?? {};
   const battleInfo = battle.battle ?? {};
@@ -300,8 +274,7 @@ async function main() {
           console.log("=== 끝 ===");
         }
 
-        const filtered = excludeRepeatedRosters(battles);
-        for (const battle of filtered) {
+        for (const battle of battles) {
           try {
             await processBattle(battle, tag, rankedRank, mapWhitelist);
           } catch (e) {
