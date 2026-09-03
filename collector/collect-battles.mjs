@@ -142,7 +142,9 @@ async function processBattle(battle, sourceTag, sourceRankedRank, mapWhitelist) 
   const battleInfo = battle.battle ?? {};
 
   // 경쟁전(랭크)만, 그리고 팀 정보가 있는 3vs3 형태만 처리
-  if (battleInfo.type !== "ranked") return;
+  // ⚠️ 실측 확인: 진짜 경쟁전의 type 값은 "ranked"가 아니라 "soloRanked"/"teamRanked" 였음.
+  // "ranked"는 일반 트로피 매칭 등 다른 것들까지 포함하는 값이라 이걸로 거르면 안 됨.
+  if (!["soloRanked", "teamRanked"].includes(battleInfo.type)) return;
   if (!Array.isArray(battleInfo.teams)) return;
   // 진짜 경쟁전 모드는 트로피가 전혀 변동되지 않아 trophyChange 필드 자체가 없음.
   // 필드가 있으면(=일반 트로피 매칭인데 type만 ranked로 찍힌 경우) 제외.
@@ -274,7 +276,7 @@ async function main() {
             const bi = b.battle ?? {};
             const ev = b.event ?? {};
             let reason = "통과";
-            if (bi.type !== "ranked") reason = `제외: type=${bi.type}`;
+            if (!["soloRanked", "teamRanked"].includes(bi.type)) reason = `제외: type=${bi.type}`;
             else if (!Array.isArray(bi.teams)) reason = "제외: teams 없음";
             else if (bi.trophyChange) reason = `제외: trophyChange=${bi.trophyChange} (일반매칭)`;
             else if (!mapWhitelist.has(`${bi.mode ?? ev.mode}::${ev.map}`)) reason = `제외: 화이트리스트에 없는 맵 (${bi.mode ?? ev.mode}/${ev.map})`;
