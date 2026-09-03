@@ -44,37 +44,53 @@ async function loadRankedMapWhitelist() {
   return new Set(data.map((r) => `${r.mode}::${r.map_name}`));
 }
 
-async function fetchProfile(tag) {
+async function fetchProfile(tag, retrying = false) {
   try {
     const res = await fetch(`${BS_BASE}/players/${encodeTag(tag)}`, {
       headers: { Authorization: `Bearer ${BS_API_KEY}` },
     });
     if (res.status === 404) return null;
     if (!res.ok) {
+      // 5xx(서버/프록시 쪽 일시적 오류)는 한 번 더 재시도
+      if (res.status >= 500 && !retrying) {
+        await new Promise((r) => setTimeout(r, 1000));
+        return fetchProfile(tag, true);
+      }
       console.warn(`[warn] ${tag} 프로필 조회 실패: ${res.status}`);
       return null;
     }
     return await res.json();
   } catch (e) {
-    // 네트워크 순간 오류(ECONNRESET 등)는 이 태그만 건너뛰고 계속 진행
+    if (!retrying) {
+      await new Promise((r) => setTimeout(r, 1000));
+      return fetchProfile(tag, true);
+    }
     console.warn(`[warn] ${tag} 프로필 조회 중 네트워크 오류:`, e.message);
     return null;
   }
 }
 
-async function fetchBattleLog(tag) {
+async function fetchBattleLog(tag, retrying = false) {
   try {
     const res = await fetch(`${BS_BASE}/players/${encodeTag(tag)}/battlelog`, {
       headers: { Authorization: `Bearer ${BS_API_KEY}` },
     });
     if (res.status === 404) return null; // 태그가 사라졌거나 오탈자
     if (!res.ok) {
+      if (res.status >= 500 && !retrying) {
+        await new Promise((r) => setTimeout(r, 1000));
+        return fetchBattleLog(tag, true);
+      }
       console.warn(`[warn] ${tag} battlelog fetch failed: ${res.status}`);
       return null;
     }
     const json = await res.json();
     return json.items ?? [];
   } catch (e) {
+    if (!retrying) {
+      await new Promise((r) => setTimeout(r, 1000));
+      return fetchBattleLog(tag, true);
+    }
     console.warn(`[warn] ${tag} battlelog 조회 중 네트워크 오류:`, e.message);
     return null;
   }
