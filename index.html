@@ -565,6 +565,14 @@ render();
 <style>
 #tabBar button{ background:var(--panel2,#2B2150); color:var(--muted,#9B90C4); transition:background .15s,color .15s; }
 #tabBar button.active{ background:var(--gold,#FFC53D); color:#1a1330; }
+#tierBtn-legend, #tierBtn-pro{
+  background:#f0f0f0; color:#888; border:2px solid transparent;
+  transition:background .15s,color .15s,border-color .15s;
+}
+#tierBtn-legend.active, #tierBtn-pro.active{
+  background:var(--gold,#FFC53D); color:#1a1330; border-color:#c98f00;
+  box-shadow:0 0 0 2px rgba(255,197,61,.35);
+}
 
 :root{
   --bg:#171130; --panel:#221A3D; --panel2:#2B2150; --border:#3A2E63;
@@ -694,8 +702,15 @@ button.ghost.danger{ color:var(--red); border-color:#5A2E3A; }
   ============================================================
 -->
 <section id="winrate-section" style="max-width:720px;margin:0 auto;padding:20px;font-family:sans-serif;display:none;">
-  <h2 style="margin-bottom:4px;">경쟁전 맵별 브롤러 승률 (전설 3+)</h2>
-  <p style="margin:0 0 12px;color:#888;font-size:12px;">※ 표본이 50경기 미만인 브롤러/맵은 신뢰도가 낮아 표시하지 않습니다.</p>
+  <h2 id="winrate-title" style="margin-bottom:4px;">경쟁전 맵별 브롤러 승률 (전설3 ~ 프로)</h2>
+  <p id="winrate-note" style="margin:0 0 12px;color:#888;font-size:12px;">※ 표본이 50경기 미만인 브롤러/맵은 신뢰도가 낮아 표시하지 않습니다.</p>
+
+  <div style="display:flex;gap:8px;margin-bottom:16px;">
+    <button id="tierBtn-legend" onclick="setWinrateTier('legend')"
+      style="flex:1;padding:10px;border-radius:8px;border:none;cursor:pointer;font-weight:700;font-size:13px;">전설3 ~ 프로</button>
+    <button id="tierBtn-pro" onclick="setWinrateTier('pro')"
+      style="flex:1;padding:10px;border-radius:8px;border:none;cursor:pointer;font-weight:700;font-size:13px;">Only 프로</button>
+  </div>
 
   <select id="winrate-map-select" style="padding:8px;font-size:14px;margin-bottom:16px;">
     <option value="">맵을 선택하세요</option>
@@ -721,7 +736,11 @@ button.ghost.danger{ color:var(--red); border-color:#5A2E3A; }
 (function () {
   const SUPABASE_URL = "https://qtilfotrhyjadlqwrznz.supabase.co";
   const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InF0aWxmb3RyaHlqYWRscXdyem56Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODgyODQ4MTIsImV4cCI6MjEwMzg2MDgxMn0.tdQC2nHcLckPSwyTrHm31eOvQ3iWFahrvX-9oimzcXQ";
-  const MIN_GAMES = 50; // 표본 최소 경기 수 (50경기 미만 브롤러/맵은 신뢰도가 낮아 숨김)
+  const TIERS = {
+    legend: { view: "map_brawler_winrate", minGames: 50, title: "경쟁전 맵별 브롤러 승률 (전설3 ~ 프로)", note: "※ 표본이 50경기 미만인 브롤러/맵은 신뢰도가 낮아 표시하지 않습니다." },
+    pro: { view: "map_brawler_winrate_pro", minGames: 0, title: "경쟁전 맵별 브롤러 승률 (Only 프로)", note: "" },
+  };
+  let currentTier = "legend";
 
   const REST_BASE = `${SUPABASE_URL}/rest/v1`;
   const headers = {
@@ -733,6 +752,10 @@ button.ghost.danger{ color:var(--red); border-color:#5A2E3A; }
   const statusEl = document.getElementById("winrate-status");
   const table = document.getElementById("winrate-table");
   const tbody = document.getElementById("winrate-tbody");
+  const titleEl = document.getElementById("winrate-title");
+  const noteEl = document.getElementById("winrate-note");
+  const tierBtnLegend = document.getElementById("tierBtn-legend");
+  const tierBtnPro = document.getElementById("tierBtn-pro");
 
   const MODE_LABEL = {
     gemGrab: "젬그랩",
@@ -745,9 +768,11 @@ button.ghost.danger{ color:var(--red); border-color:#5A2E3A; }
 
   async function loadMapList() {
     statusEl.textContent = "맵 목록 불러오는 중...";
+    mapSelect.innerHTML = '<option value="">맵을 선택하세요</option>';
+    const tier = TIERS[currentTier];
     try {
       const res = await fetch(
-        `${REST_BASE}/map_brawler_winrate?select=map_id,map_name,mode&games=gte.${MIN_GAMES}`,
+        `${REST_BASE}/${tier.view}?select=map_id,map_name,mode&games=gte.${tier.minGames}`,
         { headers }
       );
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
@@ -790,7 +815,9 @@ button.ghost.danger{ color:var(--red); border-color:#5A2E3A; }
 
       statusEl.textContent =
         seenMapIds.size === 0
-          ? "아직 50경기 이상 쌓인 맵이 없어요. 데이터가 더 쌓이면 나타납니다."
+          ? (tier.minGames > 0
+              ? `아직 ${tier.minGames}경기 이상 쌓인 맵이 없어요. 데이터가 더 쌓이면 나타납니다.`
+              : "아직 쌓인 데이터가 없어요.")
           : "";
     } catch (e) {
       statusEl.textContent = "맵 목록을 불러오지 못했습니다: " + e.message;
@@ -802,17 +829,21 @@ button.ghost.danger{ color:var(--red); border-color:#5A2E3A; }
     tbody.innerHTML = "";
     if (!mapId) return;
 
+    const tier = TIERS[currentTier];
     statusEl.textContent = "승률 불러오는 중...";
     try {
       const res = await fetch(
-        `${REST_BASE}/map_brawler_winrate?map_id=eq.${mapId}&games=gte.${MIN_GAMES}&order=win_rate.desc`,
+        `${REST_BASE}/${tier.view}?map_id=eq.${mapId}&games=gte.${tier.minGames}&order=win_rate.desc`,
         { headers }
       );
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const rows = await res.json();
 
       if (rows.length === 0) {
-        statusEl.textContent = "이 맵은 아직 50경기 이상 쌓인 브롤러가 없어요.";
+        statusEl.textContent =
+          tier.minGames > 0
+            ? `이 맵은 아직 ${tier.minGames}경기 이상 쌓인 브롤러가 없어요.`
+            : "이 맵은 아직 쌓인 데이터가 없어요.";
         return;
       }
 
@@ -841,8 +872,23 @@ button.ghost.danger{ color:var(--red); border-color:#5A2E3A; }
     }
   }
 
+  window.setWinrateTier = function (tierKey) {
+    currentTier = tierKey;
+    const tier = TIERS[tierKey];
+    titleEl.textContent = tier.title;
+    noteEl.textContent = tier.note;
+    noteEl.style.display = tier.note ? "" : "none";
+    tierBtnLegend.classList.toggle("active", tierKey === "legend");
+    tierBtnPro.classList.toggle("active", tierKey === "pro");
+    tierBtnLegend.textContent = (tierKey === "legend" ? "✓ " : "") + "전설3 ~ 프로";
+    tierBtnPro.textContent = (tierKey === "pro" ? "✓ " : "") + "Only 프로";
+    table.style.display = "none";
+    tbody.innerHTML = "";
+    loadMapList();
+  };
+
   mapSelect.addEventListener("change", (e) => loadWinrate(e.target.value));
-  loadMapList();
+  setWinrateTier("legend");
 })();
 </script>
 
