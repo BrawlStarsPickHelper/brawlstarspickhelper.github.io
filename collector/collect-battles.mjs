@@ -45,28 +45,39 @@ async function loadRankedMapWhitelist() {
 }
 
 async function fetchProfile(tag) {
-  const res = await fetch(`${BS_BASE}/players/${encodeTag(tag)}`, {
-    headers: { Authorization: `Bearer ${BS_API_KEY}` },
-  });
-  if (res.status === 404) return null;
-  if (!res.ok) {
-    console.warn(`[warn] ${tag} 프로필 조회 실패: ${res.status}`);
+  try {
+    const res = await fetch(`${BS_BASE}/players/${encodeTag(tag)}`, {
+      headers: { Authorization: `Bearer ${BS_API_KEY}` },
+    });
+    if (res.status === 404) return null;
+    if (!res.ok) {
+      console.warn(`[warn] ${tag} 프로필 조회 실패: ${res.status}`);
+      return null;
+    }
+    return await res.json();
+  } catch (e) {
+    // 네트워크 순간 오류(ECONNRESET 등)는 이 태그만 건너뛰고 계속 진행
+    console.warn(`[warn] ${tag} 프로필 조회 중 네트워크 오류:`, e.message);
     return null;
   }
-  return res.json();
 }
 
 async function fetchBattleLog(tag) {
-  const res = await fetch(`${BS_BASE}/players/${encodeTag(tag)}/battlelog`, {
-    headers: { Authorization: `Bearer ${BS_API_KEY}` },
-  });
-  if (res.status === 404) return null; // 태그가 사라졌거나 오탈자
-  if (!res.ok) {
-    console.warn(`[warn] ${tag} battlelog fetch failed: ${res.status}`);
+  try {
+    const res = await fetch(`${BS_BASE}/players/${encodeTag(tag)}/battlelog`, {
+      headers: { Authorization: `Bearer ${BS_API_KEY}` },
+    });
+    if (res.status === 404) return null; // 태그가 사라졌거나 오탈자
+    if (!res.ok) {
+      console.warn(`[warn] ${tag} battlelog fetch failed: ${res.status}`);
+      return null;
+    }
+    const json = await res.json();
+    return json.items ?? [];
+  } catch (e) {
+    console.warn(`[warn] ${tag} battlelog 조회 중 네트워크 오류:`, e.message);
     return null;
   }
-  const json = await res.json();
-  return json.items ?? [];
 }
 
 function makeBattleHash(battleTimeISO, tags) {
@@ -98,6 +109,32 @@ async function upsertMap(mapId, mapName, mode) {
 async function queueNewTags(tags) {
   const rows = tags.map((tag) => ({ tag }));
   await supabase.from("player_tags").upsert(rows, { onConflict: "tag", ignoreDuplicates: true });
+}
+
+// 한 플레이어의 최근 25경기 안에서 정확히 똑같은 6명 조합이 두 번 이상 나오면
+// 친선(파워매치 등, 친구끼리 반복 플레이)일 가능성이 매우 높으므로 전부 제외.
+// (실제 랜덤 매칭에서 같은 6명이 다시 만날 확률은 사실상 0에 가까움)
+function excludeRepeatedRosters(battles) {
+  const rosterKeyOf = (battle) => {
+    const teams = battle.battle?.teams;
+    if (!Array.isArray(teams)) return null;
+    const allTags = teams.flat().map((p) => p.tag);
+    if (allTags.length !== 6) return null;
+    return [...allTags].sort().join(",");
+  };
+
+  const counts = new Map();
+  for (const battle of battles) {
+    const key = rosterKeyOf(battle);
+    if (!key) continue;
+    counts.set(key, (counts.get(key) ?? 0) + 1);
+  }
+
+  return battles.filter((battle) => {
+    const key = rosterKeyOf(battle);
+    if (!key) return true; // 팀 정보 없는 배틀은 어차피 processBattle에서 걸러짐
+    return counts.get(key) === 1; // 이 배치 안에서 딱 한 번만 나온 조합만 통과
+  });
 }
 
 async function processBattle(battle, sourceTag, sourceRankedRank, mapWhitelist) {
@@ -144,6 +181,7 @@ async function processBattle(battle, sourceTag, sourceRankedRank, mapWhitelist) 
         mode: battleInfo.mode ?? event.mode,
         map_id: event.id ?? null,
         ranked_rank: sourceRankedRank,
+        raw_battle: battle,
       },
       { onConflict: "battle_hash" }
     )
@@ -228,7 +266,25 @@ async function main() {
       processedCount++;
       const battles = await fetchBattleLog(tag);
       if (battles) {
-        for (const battle of battles) {
+        // ⚠️ 디버그용: DEBUG_TAG 환경변수와 일치하면 이 사람의 25경기 전부를
+        // 통과/제외 여부와 이유까지 자세히 로그로 출력
+        if (process.env.DEBUG_TAG && tag === process.env.DEBUG_TAG) {
+          console.log(`=== DEBUG_TAG(${tag}) 배틀 ${battles.length}개 상세 ===`);
+          for (const b of battles) {
+            const bi = b.battle ?? {};
+            const ev = b.event ?? {};
+            let reason = "통과";
+            if (bi.type !== "ranked") reason = `제외: type=${bi.type}`;
+            else if (!Array.isArray(bi.teams)) reason = "제외: teams 없음";
+            else if (bi.trophyChange) reason = `제외: trophyChange=${bi.trophyChange} (일반매칭)`;
+            else if (!mapWhitelist.has(`${bi.mode ?? ev.mode}::${ev.map}`)) reason = `제외: 화이트리스트에 없는 맵 (${bi.mode ?? ev.mode}/${ev.map})`;
+            console.log(`  ${b.battleTime} | mode=${bi.mode ?? ev.mode} | map=${ev.map} | trophyChange=${bi.trophyChange} | ${reason}`);
+          }
+          console.log("=== 끝 ===");
+        }
+
+        const filtered = excludeRepeatedRosters(battles);
+        for (const battle of filtered) {
           try {
             await processBattle(battle, tag, rankedRank, mapWhitelist);
           } catch (e) {
