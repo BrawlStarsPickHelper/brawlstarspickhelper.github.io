@@ -125,7 +125,17 @@ async function processBattle(battle, sourceTag, sourceRankedRank, mapWhitelist) 
   if (battleInfo.trophyChange) return;
   // 실제 경쟁전에 나오는 맵인지 화이트리스트로 한 번 더 검증
   const mode = battleInfo.mode ?? event.mode;
-  if (!mapWhitelist.has(`${mode}::${event.map}`)) return;
+  if (!mapWhitelist.has(`${mode}::${event.map}`)) {
+    // 화이트리스트에 없어서 걸러진 맵은, 혹시 이름 오타/불일치일 수 있으니
+    // 한 번 실행당 조합별로 한 번만 경고 로그를 남김 (동일 이름 반복 스팸 방지)
+    const key = `${mode}::${event.map}`;
+    if (!global.__loggedMissingMaps) global.__loggedMissingMaps = new Set();
+    if (!global.__loggedMissingMaps.has(key)) {
+      global.__loggedMissingMaps.add(key);
+      console.warn(`[whitelist-miss] 화이트리스트에 없는 맵 발견: mode=${mode}, map="${event.map}" (오타/누락일 수 있음)`);
+    }
+    return;
+  }
 
   const allPlayers = battleInfo.teams.flat();
   const tags = allPlayers.map((p) => p.tag);
@@ -227,12 +237,19 @@ async function main() {
     process.exit(1);
   }
 
-  console.log(`이번 실행 대상 태그 ${queue.length}개`);
+  // DEBUG_TAG는 큐 순서(수만 명 밀려있어도)와 무관하게 이번 실행에 무조건 포함시킴
+  let finalQueue = queue;
+  if (process.env.DEBUG_TAG && !queue.some((q) => q.tag === process.env.DEBUG_TAG)) {
+    finalQueue = [{ tag: process.env.DEBUG_TAG }, ...queue];
+    console.log(`DEBUG_TAG(${process.env.DEBUG_TAG})를 큐 순서 무시하고 강제로 포함시킴`);
+  }
+
+  console.log(`이번 실행 대상 태그 ${finalQueue.length}개`);
 
   let skippedLowRank = 0;
   let processedCount = 0;
 
-  for (const { tag } of queue) {
+  for (const { tag } of finalQueue) {
     const profile = await fetchProfile(tag);
     const rankedRank = profile?.rankedRank ?? null;
 
