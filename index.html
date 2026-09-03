@@ -801,8 +801,16 @@ button.ghost.danger{ color:var(--red); border-color:#5A2E3A; }
       for (const row of rows) {
         const tr = document.createElement("tr");
         tr.style.borderBottom = "1px solid #eee";
+        const iconUrl = `https://cdn.brawlify.com/brawlers/borderless/${row.brawler_id}.png`;
         tr.innerHTML = `
-          <td style="padding:8px;">${row.brawler_name ?? row.brawler_id}</td>
+          <td style="padding:8px;">
+            <div style="display:flex;align-items:center;gap:8px;">
+              <img src="${iconUrl}" alt="" width="28" height="28"
+                   style="border-radius:50%;background:#eee;object-fit:cover;"
+                   onerror="this.style.display='none';" />
+              <span>${row.brawler_name ?? row.brawler_id}</span>
+            </div>
+          </td>
           <td style="padding:8px;">${row.games}</td>
           <td style="padding:8px;font-weight:bold;">${row.win_rate}%</td>
         `;
