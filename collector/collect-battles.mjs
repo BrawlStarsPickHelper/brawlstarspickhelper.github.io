@@ -271,6 +271,15 @@ async function main() {
         // ⚠️ 디버그용: DEBUG_TAG 환경변수와 일치하면 이 사람의 25경기 전부를
         // 통과/제외 여부와 이유까지 자세히 로그로 출력
         if (process.env.DEBUG_TAG && tag === process.env.DEBUG_TAG) {
+          const rosterCounts = new Map();
+          for (const b of battles) {
+            const teams = b.battle?.teams;
+            if (!Array.isArray(teams)) continue;
+            const allTags = teams.flat().map((p) => p.tag);
+            if (allTags.length !== 6) continue;
+            const key = [...allTags].sort().join(",");
+            rosterCounts.set(key, (rosterCounts.get(key) ?? 0) + 1);
+          }
           console.log(`=== DEBUG_TAG(${tag}) 배틀 ${battles.length}개 상세 ===`);
           for (const b of battles) {
             const bi = b.battle ?? {};
@@ -280,6 +289,12 @@ async function main() {
             else if (!Array.isArray(bi.teams)) reason = "제외: teams 없음";
             else if (bi.trophyChange) reason = `제외: trophyChange=${bi.trophyChange} (일반매칭)`;
             else if (!mapWhitelist.has(`${bi.mode ?? ev.mode}::${ev.map}`)) reason = `제외: 화이트리스트에 없는 맵 (${bi.mode ?? ev.mode}/${ev.map})`;
+            else {
+              const allTags = (bi.teams ?? []).flat().map((p) => p.tag);
+              const key = [...allTags].sort().join(",");
+              const rosterCount = rosterCounts.get(key) ?? 1;
+              if (rosterCount > 1) reason = `제외: 반복 로스터 (이 6명 조합이 ${rosterCount}번 나옴)`;
+            }
             console.log(`  ${b.battleTime} | mode=${bi.mode ?? ev.mode} | map=${ev.map} | trophyChange=${bi.trophyChange} | ${reason}`);
           }
           console.log("=== 끝 ===");
