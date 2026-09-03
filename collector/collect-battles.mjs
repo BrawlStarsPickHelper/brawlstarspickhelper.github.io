@@ -249,7 +249,7 @@ async function main() {
   let skippedLowRank = 0;
   let processedCount = 0;
 
-  for (const { tag } of finalQueue) {
+  async function processTag(tag) {
     const profile = await fetchProfile(tag);
     const rankedRank = profile?.rankedRank ?? null;
 
@@ -306,6 +306,13 @@ async function main() {
       .from("player_tags")
       .update({ last_checked_at: new Date().toISOString() })
       .eq("tag", tag);
+  }
+
+  // 태그들을 동시에 여러 명씩 병렬 처리 (CONCURRENCY명씩 묶어서 처리 -> 전체 소요시간 단축)
+  const CONCURRENCY = Number(process.env.CONCURRENCY ?? 8);
+  for (let i = 0; i < finalQueue.length; i += CONCURRENCY) {
+    const batch = finalQueue.slice(i, i + CONCURRENCY);
+    await Promise.all(batch.map(({ tag }) => processTag(tag)));
   }
 
   console.log(`전설3+ 통과: ${processedCount}명 / 미달로 스킵: ${skippedLowRank}명`);
