@@ -13,7 +13,26 @@
 </style>
 </head>
 <body>
+<div id="tabBar" style="display:flex;gap:8px;max-width:900px;margin:16px auto 0;padding:0 16px;font-family:sans-serif;">
+  <button id="tabBtn-app" onclick="showTab('app')"
+    style="flex:1;padding:12px;border-radius:10px 10px 0 0;border:none;cursor:pointer;font-weight:700;font-size:14px;">픽 카운터</button>
+  <button id="tabBtn-winrate" onclick="showTab('winrate')"
+    style="flex:1;padding:12px;border-radius:10px 10px 0 0;border:none;cursor:pointer;font-weight:700;font-size:14px;">경쟁전 맵별 브롤러 승률</button>
+</div>
 <div id="app"></div>
+
+<script>
+function showTab(name){
+  document.getElementById('app').style.display = name === 'app' ? '' : 'none';
+  document.getElementById('winrate-section').style.display = name === 'winrate' ? '' : 'none';
+  document.getElementById('tabBtn-app').classList.toggle('active', name === 'app');
+  document.getElementById('tabBtn-winrate').classList.toggle('active', name === 'winrate');
+  if (name === 'app' && typeof window.render === 'function') {
+    window.render();
+  }
+}
+document.addEventListener('DOMContentLoaded', function(){ showTab('app'); });
+</script>
 
 <script>
 /* ============================================================
@@ -414,10 +433,6 @@ function renderSetup(){
       <div class="dots">${computeOrder(S.firstColor).map(c=>`<span class="dot ${c}"></span>`).join("")}</div>
     </div>
     <button class="primary" onclick="startPick()">다음 — 픽 시작</button>
-    <a class="extLink mt" href="https://brawlinsights.com/en/tools/pick_tool" target="_blank" rel="noopener noreferrer">
-      <span class="extLinkIcon">↗</span>
-      <span class="extLinkText">내가 1픽이고 선공일 때 — 맵별 티어리스트 보기</span>
-    </a>
   </div>`;
 }
 
@@ -456,10 +471,6 @@ function renderPick(){
       scored.sort((a,b)=>b.score-a.score);
       const recommended = scored.filter(s=>s.score>0).slice(0,10);
       body += `<div class="recoBox">`;
-      body += `<a class="extLink" href="https://brawlinsights.com/en/tools/pick_tool" target="_blank" rel="noopener noreferrer">
-        <span class="extLinkIcon">↗</span>
-        <span class="extLinkText">선공 1픽용 맵별 티어리스트 표</span>
-      </a>`;
       if (enemyPicks.length === 0){
         body += `<p class="tiny muted">아직 상대 픽이 없어서 카운터 추천이 없어요. 아래에서 자유롭게 픽하세요.</p>`;
       } else {
@@ -550,6 +561,9 @@ render();
 </script>
 
 <style>
+#tabBar button{ background:var(--panel2,#2B2150); color:var(--muted,#9B90C4); transition:background .15s,color .15s; }
+#tabBar button.active{ background:var(--gold,#FFC53D); color:#1a1330; }
+
 :root{
   --bg:#171130; --panel:#221A3D; --panel2:#2B2150; --border:#3A2E63;
   --text:#F5F1FF; --muted:#9B90C4; --gold:#FFC53D; --blue:#3FA9F5; --red:#FF5468;
@@ -677,7 +691,7 @@ button.ghost.danger{ color:var(--red); border-color:#5A2E3A; }
   프로젝트 값으로 바꾸세요 (Project Settings > API 페이지).
   ============================================================
 -->
-<section id="winrate-section" style="max-width:720px;margin:40px auto;padding:20px;font-family:sans-serif;">
+<section id="winrate-section" style="max-width:720px;margin:0 auto;padding:20px;font-family:sans-serif;display:none;">
   <h2 style="margin-bottom:4px;">경쟁전 맵별 브롤러 승률 (전설 3+)</h2>
   <p style="margin:0 0 12px;color:#888;font-size:12px;">※ 표본이 50경기 미만인 브롤러/맵은 신뢰도가 낮아 표시하지 않습니다.</p>
 
@@ -697,6 +711,8 @@ button.ghost.danger{ color:var(--red); border-color:#5A2E3A; }
     </thead>
     <tbody id="winrate-tbody"></tbody>
   </table>
+
+  <p style="margin-top:12px;color:#888;font-size:12px;">※ 선공 1픽일때 참조</p>
 </section>
 
 <script>
