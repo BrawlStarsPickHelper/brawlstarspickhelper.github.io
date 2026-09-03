@@ -40,4 +40,3 @@ jobs:
           # 스케줄 실행(cron)에는 inputs가 비어있으므로 자동으로 false가 됨
           DRY_RUN: ${{ inputs.dry_run }}
           DRY_RUN_TAG: ${{ inputs.dry_run_tag }}
-          DEBUG_TAG: "#2YJ9GJGC2
