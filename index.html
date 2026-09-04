@@ -334,7 +334,7 @@ async function ensureMatchupData(){
   matchupLoadState = "loading";
   try {
     const res = await fetch(
-      `${MATCHUP_SUPABASE_URL}/rest/v1/brawler_matchup_winrate?select=brawler_name,opponent_name,games,win_rate&games=gte.${MATCHUP_MIN_GAMES}`,
+      `${MATCHUP_SUPABASE_URL}/rest/v1/brawler_matchup_winrate_cached?select=brawler_name,opponent_name,games,win_rate&games=gte.${MATCHUP_MIN_GAMES}`,
       { headers: { apikey: MATCHUP_SUPABASE_ANON_KEY, Authorization: `Bearer ${MATCHUP_SUPABASE_ANON_KEY}` } }
     );
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
@@ -874,8 +874,8 @@ button.ghost.danger{ color:var(--red); border-color:#5A2E3A; }
   const SUPABASE_URL = "https://qtilfotrhyjadlqwrznz.supabase.co";
   const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InF0aWxmb3RyaHlqYWRscXdyem56Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODgyODQ4MTIsImV4cCI6MjEwMzg2MDgxMn0.tdQC2nHcLckPSwyTrHm31eOvQ3iWFahrvX-9oimzcXQ";
   const TIERS = {
-    legend: { view: "map_brawler_winrate", minGames: 50, title: "경쟁전 맵별 브롤러 승률 (전설3 ~ 프로)", note: "※ 표본이 50경기 미만인 브롤러/맵은 신뢰도가 낮아 표시하지 않습니다." },
-    pro: { view: "map_brawler_winrate_pro", minGames: 0, title: "경쟁전 맵별 브롤러 승률 (Only 프로)", note: "" },
+    legend: { view: "map_brawler_winrate_cached", minGames: 50, title: "경쟁전 맵별 브롤러 승률 (전설3 ~ 프로)", note: "※ 표본이 50경기 미만인 브롤러/맵은 신뢰도가 낮아 표시하지 않습니다." },
+    pro: { view: "map_brawler_winrate_pro_cached", minGames: 0, title: "경쟁전 맵별 브롤러 승률 (Only 프로)", note: "" },
   };
   let currentTier = "legend";
 
