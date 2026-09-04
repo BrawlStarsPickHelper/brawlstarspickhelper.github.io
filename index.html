@@ -357,6 +357,14 @@ async function ensureMatchupData(){
   render(); // 데이터가 늦게 도착해도 화면에 바로 반영되도록 다시 그리기
 }
 
+function retryMatchupData(){
+  matchupLoadState = "idle";
+  matchupIndex = null;
+  matchupOpponents = null;
+  ensureMatchupData();
+  render();
+}
+
 /* 실데이터 전용 점수: 상대들 중 실데이터(50판+)가 있는 사람만 대상으로 계산.
    데이터 없는 상대는 그냥 빼고 계산하므로, 최종 태그에는 "live" 타입만 나옴 (리스트 방식과 안 섞임).
    ⚠️ 상대 중 단 한 명한테라도 승률이 DANGER_WIN_RATE 미만으로 크게 밀리면, 합산 점수가 양수여도
@@ -583,6 +591,9 @@ function renderPick(){
         // 화면을 반으로 나눠서 왼쪽엔 실데이터 기반, 오른쪽엔 리스트 기반을 동시에 보여줌
         if (matchupLoadState === "loading" && !matchupIndex) {
           body += `<p class="tiny muted">실제 경쟁전 데이터 불러오는 중...</p>`;
+        } else if (matchupLoadState === "error") {
+          body += `<p class="tiny muted">실제 경쟁전 데이터를 불러오지 못했어요.
+            <button class="tiny" onclick="retryMatchupData()" style="margin-left:6px;padding:2px 8px;border-radius:6px;border:none;cursor:pointer;background:#333;color:#fff;">새로고침</button></p>`;
         }
         const liveScored = pool.map(n => ({name:n, ...scoreCandidateLiveOnly(n, enemyPicks)}));
         liveScored.sort((a,b)=>b.score-a.score);
@@ -946,7 +957,8 @@ button.ghost.danger{ color:var(--red); border-color:#5A2E3A; }
               : "아직 쌓인 데이터가 없어요.")
           : "";
     } catch (e) {
-      statusEl.textContent = "맵 목록을 불러오지 못했습니다: " + e.message;
+      statusEl.innerHTML = `맵 목록을 불러오지 못했습니다: ${e.message}
+        <button class="tiny" onclick="__winrateRetryMapList()" style="margin-left:6px;padding:2px 8px;border-radius:6px;border:none;cursor:pointer;background:#333;color:#fff;">새로고침</button>`;
     }
   }
 
@@ -994,7 +1006,8 @@ button.ghost.danger{ color:var(--red); border-color:#5A2E3A; }
       table.style.display = "table";
       statusEl.textContent = "";
     } catch (e) {
-      statusEl.textContent = "승률을 불러오지 못했습니다: " + e.message;
+      statusEl.innerHTML = `승률을 불러오지 못했습니다: ${e.message}
+        <button class="tiny" onclick="__winrateRetryTable()" style="margin-left:6px;padding:2px 8px;border-radius:6px;border:none;cursor:pointer;background:#333;color:#fff;">새로고침</button>`;
     }
   }
 
@@ -1012,6 +1025,9 @@ button.ghost.danger{ color:var(--red); border-color:#5A2E3A; }
     tbody.innerHTML = "";
     loadMapList();
   };
+
+  window.__winrateRetryMapList = function(){ loadMapList(); };
+  window.__winrateRetryTable = function(){ loadWinrate(mapSelect.value); };
 
   mapSelect.addEventListener("change", (e) => loadWinrate(e.target.value));
   setWinrateTier("legend");
