@@ -303,7 +303,8 @@ const S = {
   picks: { blue: [], red: [] },
   order: [],
   step: 0,
-  q: {} // 검색어 저장용 (key별)
+  q: {}, // 검색어 저장용 (key별)
+  recoView: "separate" // "separate" | "combined" — 카운터 추천 섹션 보기 방식
 };
 
 function computeOrder(first){
@@ -313,6 +314,93 @@ function computeOrder(first){
 
 function usedSet(){
   return new Set([...S.banned, ...S.picks.blue, ...S.picks.red]);
+}
+
+/* ============================================================
+   1-1) 실제 경쟁전 데이터 기반 카운터 (brawler_matchup_winrate 뷰 연동)
+   ============================================================ */
+const MATCHUP_SUPABASE_URL = "https://qtilfotrhyjadlqwrznz.supabase.co";
+const MATCHUP_SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InF0aWxmb3RyaHlqYWRscXdyem56Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODgyODQ4MTIsImV4cCI6MjEwMzg2MDgxMn0.tdQC2nHcLckPSwyTrHm31eOvQ3iWFahrvX-9oimzcXQ";
+const MATCHUP_MIN_GAMES = 50; // 이 판수 이상인 상성만 실제 데이터로 사용, 미만이면 고정 리스트로 대체
+
+let matchupIndex = null;          // normName(내브롤러) -> Map(normName(상대) -> {win_rate, games})
+let matchupOpponents = null;      // 실데이터에 "상대"로 한 번이라도 등장한 이름들의 Set (normName 기준) — 상대별 커버리지 판단용
+let matchupLoadState = "idle";    // idle | loading | loaded | error
+
+function normName(s){ return (s || "").replace(/\s+/g, "").toUpperCase(); }
+
+async function ensureMatchupData(){
+  if (matchupLoadState === "loading" || matchupLoadState === "loaded") return;
+  matchupLoadState = "loading";
+  try {
+    const res = await fetch(
+      `${MATCHUP_SUPABASE_URL}/rest/v1/brawler_matchup_winrate?select=brawler_name,opponent_name,games,win_rate&games=gte.${MATCHUP_MIN_GAMES}`,
+      { headers: { apikey: MATCHUP_SUPABASE_ANON_KEY, Authorization: `Bearer ${MATCHUP_SUPABASE_ANON_KEY}` } }
+    );
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const rows = await res.json();
+    const idx = new Map();
+    const opponents = new Set();
+    for (const row of rows) {
+      const key = normName(row.brawler_name);
+      if (!idx.has(key)) idx.set(key, new Map());
+      idx.get(key).set(normName(row.opponent_name), { win_rate: row.win_rate, games: row.games });
+      opponents.add(normName(row.opponent_name));
+    }
+    matchupIndex = idx;
+    matchupOpponents = opponents;
+    matchupLoadState = "loaded";
+  } catch (e) {
+    console.warn("[matchup] 데이터 로드 실패:", e.message);
+    matchupLoadState = "error";
+  }
+  render(); // 데이터가 늦게 도착해도 화면에 바로 반영되도록 다시 그리기
+}
+
+/* 실데이터 전용 점수: 상대들 중 실데이터(50판+)가 있는 사람만 대상으로 계산.
+   데이터 없는 상대는 그냥 빼고 계산하므로, 최종 태그에는 "live" 타입만 나옴 (리스트 방식과 안 섞임).
+   ⚠️ 상대 중 단 한 명한테라도 승률이 DANGER_WIN_RATE 미만으로 크게 밀리면, 합산 점수가 양수여도
+   "역카운터 위험"으로 보고 아예 추천에서 제외함 (다른 상대한테 잘 먹혀서 점수가 묻히는 걸 방지). */
+const DANGER_WIN_RATE = 45;
+
+function scoreCandidateLiveOnly(candidate, enemyPicks){
+  const matches = [];
+  let score = 0;
+  let hasDangerMatchup = false;
+  const cMap = matchupIndex ? matchupIndex.get(normName(candidate)) : null;
+  enemyPicks.forEach(e => {
+    const live = cMap ? cMap.get(normName(e)) : null;
+    if (live) {
+      score += (live.win_rate - 50);
+      if (live.win_rate < DANGER_WIN_RATE) hasDangerMatchup = true;
+      matches.push({ enemy: e, type: "live", win_rate: live.win_rate, games: live.games });
+    }
+  });
+  if (matches.length === 0 || hasDangerMatchup) return { score: -Infinity, matches: [] };
+  return { score, matches };
+}
+
+/* 기본 카운터 리스트 전용 점수: 실데이터 존재 여부와 무관하게, 상대 전원을 고정 리스트 기준으로만 계산.
+   기존 방식 그대로라 항상 계산 가능함 (표본 문제로 비어있는 경우가 없음). */
+function scoreCandidateStaticOnly(candidate, enemyPicks){
+  const matches = [];
+  let score = 0;
+  enemyPicks.forEach(e => {
+    const r = counterRank(candidate, e);
+    if (r) {
+      const pts = r.len - r.rank;
+      score += pts;
+      matches.push({ enemy: e, type: "static", rank: r.rank + 1 });
+    }
+  });
+  if (matches.length === 0) return { score: -Infinity, matches: [] };
+  return { score, matches };
+}
+
+/* 상대들 중 실데이터가 하나라도 있는지 (실데이터 섹션을 아예 보여줄지 말지 판단용) */
+function hasAnyLiveCoverage(enemyPicks){
+  if (!matchupOpponents) return false;
+  return enemyPicks.some(e => matchupOpponents.has(normName(e)));
 }
 
 function counterRank(candidate, enemyBrawler){
@@ -469,23 +557,51 @@ function renderPick(){
     </div>`;
     if (isMe){
       const enemyPicks = S.picks[enemyTeam];
-      const scored = ROSTER.filter(n=>!usedSet().has(n)).map(n => ({name:n, ...scoreCandidate(n, enemyPicks)}));
-      scored.sort((a,b)=>b.score-a.score);
-      const recommended = scored.filter(s=>s.score>0).slice(0,10);
+      ensureMatchupData(); // 트리거만 하고, 도착하면 render()가 다시 불려서 실데이터로 갱신됨
+
+      const renderRecoCards = (list) => list.map(r=>`
+          <div class="recoCard" style="--tc:${TIER_COLOR[TIER_OF[r.name]]}">
+            <button class="recoMain" onclick="doPick('${r.name}')">
+              ${avatarHtml(r.name,30)}
+              <span class="recoTextCol">
+                <span class="recoName">${escapeHtml(r.name)}</span>
+                <span class="recoTags">${r.matches.map(m=> m.type === "live"
+                  ? `<span class="tag"${m.win_rate < 50 ? ' style="background:#3a1414;color:#ff8080;"' : ''}>vs ${escapeHtml(m.enemy)} 승률 ${m.win_rate}% (${m.games}판)</span>`
+                  : `<span class="tag">vs ${escapeHtml(m.enemy)} ${m.rank}순위</span>`
+                ).join("")}</span>
+              </span>
+            </button>
+            <button class="banBtn" onclick="markBanned('${r.name}')">밴되었음</button>
+          </div>`).join("");
+
       body += `<div class="recoBox">`;
       if (enemyPicks.length === 0){
         body += `<p class="tiny muted">아직 상대 픽이 없어서 카운터 추천이 없어요. 아래에서 자유롭게 픽하세요.</p>`;
       } else {
-        body += `<h3>추천 카운터픽</h3>`;
-        body += recommended.length ? `<div class="recoList">${recommended.map(r=>`
-          <div class="recoCard" style="--tc:${TIER_COLOR[TIER_OF[r.name]]}">
-            <button class="recoMain" onclick="doPick('${r.name}')">
-              ${avatarHtml(r.name,30)}
-              <span class="recoName">${escapeHtml(r.name)}</span>
-              <span class="recoTags">${r.matches.map(m=>`<span class="tag">vs ${escapeHtml(m.enemy)} ${m.rank}순위</span>`).join("")}</span>
-            </button>
-            <button class="banBtn" onclick="markBanned('${r.name}')">밴되었음</button>
-          </div>`).join("")}</div>` : `<p class="tiny muted">직접적인 카운터로 등록된 브롤러가 없어요. 아래에서 검색해서 픽하세요.</p>`;
+        const pool = ROSTER.filter(n=>!usedSet().has(n));
+
+        // 화면을 반으로 나눠서 왼쪽엔 실데이터 기반, 오른쪽엔 리스트 기반을 동시에 보여줌
+        if (matchupLoadState === "loading" && !matchupIndex) {
+          body += `<p class="tiny muted">실제 경쟁전 데이터 불러오는 중...</p>`;
+        }
+        const liveScored = pool.map(n => ({name:n, ...scoreCandidateLiveOnly(n, enemyPicks)}));
+        liveScored.sort((a,b)=>b.score-a.score);
+        const liveTop = liveScored.filter(s=>s.score > 0).slice(0,10);
+
+        const staticScored = pool.map(n => ({name:n, ...scoreCandidateStaticOnly(n, enemyPicks)}));
+        staticScored.sort((a,b)=>b.score-a.score);
+        const staticTop = staticScored.filter(s=>s.score > 0).slice(0,10);
+
+        body += `<div class="recoSplit" style="display:flex;gap:16px;align-items:flex-start;">
+          <div style="flex:1;min-width:0;">
+            <h3>실제 경쟁전 데이터 기반</h3>
+            ${liveTop.length ? `<div class="recoList">${renderRecoCards(liveTop)}</div>` : `<p class="tiny muted">실데이터상 뚜렷하게 유리한 상대가 없어요.</p>`}
+          </div>
+          <div style="flex:1;min-width:0;">
+            <h3>기본 카운터 리스트 기반</h3>
+            ${staticTop.length ? `<div class="recoList">${renderRecoCards(staticTop)}</div>` : `<p class="tiny muted">직접적인 카운터로 등록된 브롤러가 없어요.</p>`}
+          </div>
+        </div>`;
       }
       body += `<h3 class="mt">전체 브롤러에서 선택</h3>`;
       body += searchPicker('mypick', 'doPick');
@@ -671,14 +787,18 @@ button.ghost.danger{ color:var(--red); border-color:#5A2E3A; }
 .turnWho{ font-size:12.5px; color:var(--muted); }
 
 .recoBox{ margin-top:6px; }
-.recoList{ display:flex; flex-direction:column; gap:8px; }
-.recoCard{ display:flex; align-items:center; gap:8px; padding:6px; border-radius:12px;
+@media (max-width: 620px){
+  .recoSplit{ flex-direction:column !important; }
+}
+.recoList{ display:flex; flex-direction:column; gap:8px; min-width:0; }
+.recoCard{ display:flex; align-items:center; gap:8px; padding:6px; border-radius:12px; min-width:0;
   border:1.5px solid var(--tc); background:var(--panel2); }
-.recoMain{ flex:1; display:flex; justify-content:space-between; align-items:center; gap:10px; padding:5px 8px;
+.recoMain{ flex:1; min-width:0; display:flex; align-items:center; gap:8px; padding:5px 8px;
   border:none; background:transparent; cursor:pointer; text-align:left; }
 .recoMain:hover{ background:rgba(255,197,61,.08); border-radius:8px; }
+.recoTextCol{ flex:1; min-width:0; display:flex; flex-direction:column; align-items:center; justify-content:center; text-align:center; gap:4px; }
 .recoName{ font-family:'Baloo 2',sans-serif; font-weight:700; color:var(--tc); font-size:14.5px; white-space:nowrap; }
-.recoTags{ display:flex; flex-wrap:wrap; gap:5px; justify-content:flex-end; }
+.recoTags{ display:flex; flex-wrap:wrap; gap:5px; justify-content:center; min-width:0; }
 .tag{ font-size:10.5px; padding:3px 7px; border-radius:999px; background:#140F28; color:var(--muted); white-space:nowrap; }
 .banBtn{ flex-shrink:0; padding:8px 10px; border-radius:9px; border:1.5px solid var(--border); background:transparent;
   color:var(--muted); font-size:11px; cursor:pointer; white-space:nowrap; }
