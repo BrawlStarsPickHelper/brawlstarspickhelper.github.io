@@ -332,6 +332,15 @@ async function main() {
   }
 
   console.log(`전설3+ 통과: ${processedCount}명 / 미달로 스킵: ${skippedLowRank}명`);
+
+  // 승률/상성 캐시(구체화 뷰) 갱신 - 이걸 해줘야 사이트에서 최신 데이터가 보임
+  const { error: refreshErr } = await supabase.rpc("refresh_winrate_cache");
+  if (refreshErr) {
+    console.warn("[warn] 캐시 갱신 실패:", refreshErr.message);
+  } else {
+    console.log("캐시 갱신 완료");
+  }
+
   console.log("수집 완료");
 }
 
