@@ -618,11 +618,17 @@ function renderPick(){
     <div class="teamRow">
       <div class="teamCol blue">
         <h4>블루팀</h4>
-        <div class="chips vert">${S.picks.blue.map(n=>chip(n)).join("") || '<span class="tiny muted">-</span>'}</div>
+        <div class="chips vert">${S.picks.blue.map((n,i)=>{
+          const isLast = S.step>0 && S.order[S.step-1]==='blue' && i===S.picks.blue.length-1;
+          return chip(n, isLast ? { onRemove:"undoPick()" } : {});
+        }).join("") || '<span class="tiny muted">-</span>'}</div>
       </div>
       <div class="teamCol red">
         <h4>레드팀</h4>
-        <div class="chips vert">${S.picks.red.map(n=>chip(n)).join("") || '<span class="tiny muted">-</span>'}</div>
+        <div class="chips vert">${S.picks.red.map((n,i)=>{
+          const isLast = S.step>0 && S.order[S.step-1]==='red' && i===S.picks.red.length-1;
+          return chip(n, isLast ? { onRemove:"undoPick()" } : {});
+        }).join("") || '<span class="tiny muted">-</span>'}</div>
       </div>
     </div>
     ${body}
