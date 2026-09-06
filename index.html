@@ -996,10 +996,16 @@ button.ghost.danger{ color:var(--red); border-color:#5A2E3A; }
       style="padding:10px 16px;border-radius:8px;border:none;cursor:pointer;font-weight:700;background:#333;color:#fff;">등록하기</button>
   </div>
 
-  <div style="display:flex;align-items:center;gap:10px;margin-bottom:14px;flex-wrap:wrap;">
+  <div style="display:flex;align-items:center;gap:10px;margin-bottom:10px;flex-wrap:wrap;">
     <div id="lobby-filter-bar" style="display:flex;gap:6px;flex-wrap:wrap;flex:1;"></div>
     <button onclick="__lobbyRefresh()" title="지금 바로 새로고침"
       style="padding:8px 12px;border-radius:8px;border:none;cursor:pointer;font-size:13px;font-weight:600;background:#eee;color:#555;white-space:nowrap;">🔄 새로고침</button>
+  </div>
+
+  <div id="lobby-sub-filter-wrap" style="display:none;margin-bottom:14px;">
+    <label style="display:block;font-size:12px;color:#666;margin-bottom:4px;" id="lobby-sub-filter-label"></label>
+    <select id="lobby-sub-filter" onchange="__lobbySetSubFilter(this.value)"
+      style="padding:8px;border-radius:6px;border:1px solid #ccc;font-size:13px;"></select>
   </div>
 
   <div id="lobby-status" style="color:#888;font-size:13px;margin-bottom:8px;"></div>
@@ -1290,8 +1296,30 @@ button.ghost.danger{ color:var(--red); border-color:#5A2E3A; }
 
   const CATEGORY_ORDER = ["일반", "보스전", "경쟁전", "챌린지", "이벤트"];
   const filterBarEl = document.getElementById("lobby-filter-bar");
+  const subFilterWrapEl = document.getElementById("lobby-sub-filter-wrap");
+  const subFilterLabelEl = document.getElementById("lobby-sub-filter-label");
+  const subFilterSelectEl = document.getElementById("lobby-sub-filter");
   let currentFilter = "전체";
+  let currentSubFilter = ""; // "" = 세부 필터 안 걸음(전체)
   let lobbyRowsCache = []; // 마지막으로 불러온 전체 목록 (필터 전환 시 재요청 없이 바로 다시 그림)
+
+  // 카테고리별로 "구하는 팀원" 기준 2차 필터 설정 (내가 원하는 구간/티어의 방만 골라보기)
+  const SUB_FILTER_CONFIG = {
+    "일반": { field: "want_trophy_range", label: "구하는 팀원 트로피로 좁혀보기", options: TROPHY_RANGES },
+    "경쟁전": { field: "want_current_tier", label: "구하는 팀원 현재 티어로 좁혀보기", options: TIER_OPTIONS },
+    "챌린지": { field: "want_min_highest_tier", label: "구하는 팀원 최소 최고 티어로 좁혀보기", options: TIER_OPTIONS },
+    "이벤트": { field: "want_min_highest_tier", label: "구하는 팀원 최소 최고 티어로 좁혀보기", options: TIER_OPTIONS },
+  };
+
+  function updateSubFilterUI() {
+    const conf = SUB_FILTER_CONFIG[currentFilter];
+    if (!conf) { subFilterWrapEl.style.display = "none"; return; }
+    subFilterWrapEl.style.display = "";
+    subFilterLabelEl.textContent = conf.label;
+    subFilterSelectEl.innerHTML = `<option value="">전체</option>` +
+      conf.options.map(o => `<option value="${o}">${o}</option>`).join("");
+    subFilterSelectEl.value = currentSubFilter;
+  }
 
   function renderCard(r, mySession) {
     const isMine = Object.prototype.hasOwnProperty.call(getMyTokens(), String(r.id));
@@ -1322,15 +1350,20 @@ button.ghost.danger{ color:var(--red); border-color:#5A2E3A; }
 
   function renderList() {
     const mySession = getSessionId();
-    const rows = currentFilter === "전체"
+    let rows = currentFilter === "전체"
       ? lobbyRowsCache
       : lobbyRowsCache.filter(r => (r.category || "기타") === currentFilter);
 
+    const subConf = SUB_FILTER_CONFIG[currentFilter];
+    if (subConf && currentSubFilter) {
+      rows = rows.filter(r => r[subConf.field] === currentSubFilter);
+    }
+
     if (rows.length === 0) {
       listEl.innerHTML = "";
-      statusEl.textContent = currentFilter === "전체"
-        ? "지금은 등록된 팀 구하기 글이 없어요."
-        : `"${currentFilter}"에 등록된 글이 아직 없어요.`;
+      statusEl.textContent = currentSubFilter
+        ? "이 조건에 맞는 글이 아직 없어요."
+        : (currentFilter === "전체" ? "지금은 등록된 팀 구하기 글이 없어요." : `"${currentFilter}"에 등록된 글이 아직 없어요.`);
       return;
     }
     statusEl.textContent = "";
@@ -1339,7 +1372,14 @@ button.ghost.danger{ color:var(--red); border-color:#5A2E3A; }
 
   window.__lobbySetFilter = function (cat) {
     currentFilter = cat;
+    currentSubFilter = ""; // 카테고리 바꾸면 세부 필터는 초기화
     renderFilterBar();
+    updateSubFilterUI();
+    renderList();
+  };
+
+  window.__lobbySetSubFilter = function (value) {
+    currentSubFilter = value;
     renderList();
   };
 
@@ -1354,6 +1394,7 @@ button.ghost.danger{ color:var(--red); border-color:#5A2E3A; }
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       lobbyRowsCache = await res.json();
       renderFilterBar();
+      updateSubFilterUI();
       renderList();
     } catch (e) {
       statusEl.innerHTML = `목록을 불러오지 못했습니다: ${e.message}
