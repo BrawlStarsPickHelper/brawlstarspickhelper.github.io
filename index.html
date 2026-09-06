@@ -996,7 +996,11 @@ button.ghost.danger{ color:var(--red); border-color:#5A2E3A; }
       style="padding:10px 16px;border-radius:8px;border:none;cursor:pointer;font-weight:700;background:#333;color:#fff;">등록하기</button>
   </div>
 
-  <div id="lobby-filter-bar" style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:14px;"></div>
+  <div style="display:flex;align-items:center;gap:10px;margin-bottom:14px;flex-wrap:wrap;">
+    <div id="lobby-filter-bar" style="display:flex;gap:6px;flex-wrap:wrap;flex:1;"></div>
+    <button onclick="__lobbyRefresh()" title="지금 바로 새로고침"
+      style="padding:8px 12px;border-radius:8px;border:none;cursor:pointer;font-size:13px;font-weight:600;background:#eee;color:#555;white-space:nowrap;">🔄 새로고침</button>
+  </div>
 
   <div id="lobby-status" style="color:#888;font-size:13px;margin-bottom:8px;"></div>
   <div id="lobby-list"></div>
