@@ -20,6 +20,8 @@
     style="flex:1;padding:12px;border-radius:10px 10px 0 0;border:none;cursor:pointer;font-weight:700;font-size:14px;">픽 카운터</button>
   <button id="tabBtn-winrate" onclick="showTab('winrate')"
     style="flex:1;padding:12px;border-radius:10px 10px 0 0;border:none;cursor:pointer;font-weight:700;font-size:14px;">경쟁전 맵별 브롤러 승률</button>
+  <button id="tabBtn-lobby" onclick="showTab('lobby')"
+    style="flex:1;padding:12px;border-radius:10px 10px 0 0;border:none;cursor:pointer;font-weight:700;font-size:14px;">팀 구하기</button>
 </div>
 <div id="app"></div>
 
@@ -27,10 +29,15 @@
 function showTab(name){
   document.getElementById('app').style.display = name === 'app' ? '' : 'none';
   document.getElementById('winrate-section').style.display = name === 'winrate' ? '' : 'none';
+  document.getElementById('lobby-section').style.display = name === 'lobby' ? '' : 'none';
   document.getElementById('tabBtn-app').classList.toggle('active', name === 'app');
   document.getElementById('tabBtn-winrate').classList.toggle('active', name === 'winrate');
+  document.getElementById('tabBtn-lobby').classList.toggle('active', name === 'lobby');
   if (name === 'app' && typeof window.render === 'function') {
     window.render();
+  }
+  if (name === 'lobby' && typeof window.__lobbyRefresh === 'function') {
+    window.__lobbyRefresh();
   }
 }
 document.addEventListener('DOMContentLoaded', function(){ showTab('app'); });
@@ -869,6 +876,132 @@ button.ghost.danger{ color:var(--red); border-color:#5A2E3A; }
   <p style="margin-top:12px;color:#888;font-size:12px;">※ 선공 1픽일때 참조</p>
 </section>
 
+<section id="lobby-section" style="max-width:720px;margin:0 auto;padding:20px;font-family:sans-serif;display:none;">
+  <h2 style="margin-bottom:4px;">팀 구하기</h2>
+  <p style="margin:0 0 16px;color:#888;font-size:12px;">※ 계정/로그인이 없어서 "실제 접속중"인지는 알 수 없고, 최근 20분 안에 등록한 글만 보여드려요.</p>
+
+  <div style="background:#f5f5f5;border-radius:10px;padding:14px;margin-bottom:20px;">
+    <div style="margin-bottom:10px;">
+      <label style="display:block;font-size:12px;color:#666;margin-bottom:4px;">모드 종류</label>
+      <select id="lobby-category" onchange="__lobbyOnCategoryChange()"
+        style="width:100%;box-sizing:border-box;padding:8px;border-radius:6px;border:1px solid #ccc;font-size:14px;">
+        <option value="">선택하세요</option>
+        <option value="일반">일반</option>
+        <option value="보스전">보스전</option>
+        <option value="경쟁전">경쟁전</option>
+        <option value="챌린지">챌린지</option>
+        <option value="이벤트">이벤트</option>
+      </select>
+    </div>
+
+    <!-- 일반 모드일 때만 -->
+    <div id="lobby-group-general" style="display:none;">
+      <div style="margin-bottom:8px;">
+        <label style="display:block;font-size:12px;color:#666;margin-bottom:4px;">세부 모드</label>
+        <select id="lobby-mode" onchange="__lobbyOnModeChange()"
+          style="width:100%;box-sizing:border-box;padding:8px;border-radius:6px;border:1px solid #ccc;font-size:14px;">
+          <option value="">선택하세요</option>
+          <option value="쇼다운">쇼다운</option>
+          <option value="젬그랩">젬그랩</option>
+          <option value="브롤볼">브롤볼</option>
+          <option value="녹아웃">녹아웃</option>
+          <option value="하이스트">하이스트</option>
+          <option value="핫존">핫존</option>
+          <option value="바운티">바운티</option>
+          <option value="바스켓브롤">바스켓브롤</option>
+          <option value="하키">하키</option>
+          <option value="5대5">5대5</option>
+          <option value="아레나">아레나</option>
+          <option value="테이크다운">테이크다운</option>
+        </select>
+      </div>
+      <div id="lobby-group-showdown" style="display:none;margin-bottom:8px;">
+        <label style="display:block;font-size:12px;color:#666;margin-bottom:4px;">쇼다운 인원</label>
+        <select id="lobby-showdown-type"
+          style="width:100%;box-sizing:border-box;padding:8px;border-radius:6px;border:1px solid #ccc;font-size:14px;">
+          <option value="">선택하세요</option>
+          <option value="2인">2인 (듀오)</option>
+          <option value="3인">3인 (스쿼드)</option>
+        </select>
+      </div>
+      <div style="display:flex;gap:8px;margin-bottom:8px;">
+        <div style="flex:1;">
+          <label style="display:block;font-size:12px;color:#666;margin-bottom:4px;">내 트로피</label>
+          <select id="lobby-my-trophy" class="lobby-trophy-select"
+            style="width:100%;box-sizing:border-box;padding:8px;border-radius:6px;border:1px solid #ccc;font-size:13px;"></select>
+        </div>
+        <div style="flex:1;">
+          <label style="display:block;font-size:12px;color:#666;margin-bottom:4px;">구하는 팀원 트로피</label>
+          <select id="lobby-want-trophy" class="lobby-trophy-select"
+            style="width:100%;box-sizing:border-box;padding:8px;border-radius:6px;border:1px solid #ccc;font-size:13px;"></select>
+        </div>
+      </div>
+    </div>
+
+    <!-- 경쟁전일 때만 -->
+    <div id="lobby-group-ranked" style="display:none;">
+      <div style="display:flex;gap:8px;margin-bottom:8px;">
+        <div style="flex:1;">
+          <label style="display:block;font-size:12px;color:#666;margin-bottom:4px;">내 최고 티어</label>
+          <select id="lobby-ranked-my-highest" class="lobby-tier-select"
+            style="width:100%;box-sizing:border-box;padding:8px;border-radius:6px;border:1px solid #ccc;font-size:13px;"></select>
+        </div>
+        <div style="flex:1;">
+          <label style="display:block;font-size:12px;color:#666;margin-bottom:4px;">내 현재 티어</label>
+          <select id="lobby-ranked-my-current" class="lobby-tier-select"
+            style="width:100%;box-sizing:border-box;padding:8px;border-radius:6px;border:1px solid #ccc;font-size:13px;"></select>
+        </div>
+      </div>
+      <div style="display:flex;gap:8px;margin-bottom:8px;">
+        <div style="flex:1;">
+          <label style="display:block;font-size:12px;color:#666;margin-bottom:4px;">구하는 팀원 최소 최고 티어</label>
+          <select id="lobby-ranked-want-highest" class="lobby-tier-select"
+            style="width:100%;box-sizing:border-box;padding:8px;border-radius:6px;border:1px solid #ccc;font-size:13px;"></select>
+        </div>
+        <div style="flex:1;">
+          <label style="display:block;font-size:12px;color:#666;margin-bottom:4px;">구하는 팀원 현재 티어</label>
+          <select id="lobby-ranked-want-current" class="lobby-tier-select"
+            style="width:100%;box-sizing:border-box;padding:8px;border-radius:6px;border:1px solid #ccc;font-size:13px;"></select>
+        </div>
+      </div>
+    </div>
+
+    <!-- 챌린지 / 이벤트일 때만 -->
+    <div id="lobby-group-ce" style="display:none;">
+      <div style="display:flex;gap:8px;margin-bottom:8px;">
+        <div style="flex:1;">
+          <label style="display:block;font-size:12px;color:#666;margin-bottom:4px;">내 최고 티어</label>
+          <select id="lobby-ce-my-highest" class="lobby-tier-select"
+            style="width:100%;box-sizing:border-box;padding:8px;border-radius:6px;border:1px solid #ccc;font-size:13px;"></select>
+        </div>
+        <div style="flex:1;">
+          <label style="display:block;font-size:12px;color:#666;margin-bottom:4px;">구하는 팀원 최소 최고 티어</label>
+          <select id="lobby-ce-want-highest" class="lobby-tier-select"
+            style="width:100%;box-sizing:border-box;padding:8px;border-radius:6px;border:1px solid #ccc;font-size:13px;"></select>
+        </div>
+      </div>
+    </div>
+
+    <div style="margin-bottom:8px;">
+      <label style="display:block;font-size:12px;color:#666;margin-bottom:4px;">
+        게임방 초대 링크 (선택 — 아래 형식만 허용됩니다)
+      </label>
+      <input id="lobby-link" type="text" placeholder="https://link.brawlstars.com/invite/gameroom/kr/?tag=XXXXXXX"
+        style="width:100%;box-sizing:border-box;padding:8px;border-radius:6px;border:1px solid #ccc;font-size:13px;">
+      <div id="lobby-link-error" style="color:#c0392b;font-size:11px;margin-top:3px;display:none;">
+        올바른 브롤스타즈 게임방 초대 링크 형식이 아니에요 (예: https://link.brawlstars.com/invite/gameroom/kr/?tag=XLZ7Q5W)
+      </div>
+    </div>
+    <button id="lobby-submit" onclick="__lobbySubmit()"
+      style="padding:10px 16px;border-radius:8px;border:none;cursor:pointer;font-weight:700;background:#333;color:#fff;">등록하기</button>
+  </div>
+
+  <div id="lobby-filter-bar" style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:14px;"></div>
+
+  <div id="lobby-status" style="color:#888;font-size:13px;margin-bottom:8px;"></div>
+  <div id="lobby-list"></div>
+</section>
+
 <script>
 (function () {
   const SUPABASE_URL = "https://qtilfotrhyjadlqwrznz.supabase.co";
@@ -1031,6 +1164,265 @@ button.ghost.danger{ color:var(--red); border-color:#5A2E3A; }
 
   mapSelect.addEventListener("change", (e) => loadWinrate(e.target.value));
   setWinrateTier("legend");
+})();
+</script>
+
+<script>
+(function () {
+  const SUPABASE_URL = "https://qtilfotrhyjadlqwrznz.supabase.co";
+  const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InF0aWxmb3RyaHlqYWRscXdyem56Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODgyODQ4MTIsImV4cCI6MjEwMzg2MDgxMn0.tdQC2nHcLckPSwyTrHm31eOvQ3iWFahrvX-9oimzcXQ";
+  const REST_BASE = `${SUPABASE_URL}/rest/v1`;
+  const headers = {
+    apikey: SUPABASE_ANON_KEY,
+    Authorization: `Bearer ${SUPABASE_ANON_KEY}`,
+    "Content-Type": "application/json",
+  };
+
+  // 브롤스타즈 게임방 초대 링크 형식만 정확히 허용 (다른 어떤 사이트 링크도 등록 불가)
+  const INVITE_LINK_PATTERN = /^https:\/\/link\.brawlstars\.com\/invite\/gameroom\/[a-z]{2}\/\?tag=[A-Za-z0-9]+$/;
+
+  const MAX_AGE_MINUTES = 20; // 이보다 오래된 글은 화면에서 숨김
+
+  const TROPHY_RANGES = ["0~499","500~999","1000~1499","1500~1999","2000~2499","2500~2999","3000+"];
+  const TIER_OPTIONS = [
+    "브론즈1","브론즈2","브론즈3","실버1","실버2","실버3","골드1","골드2","골드3",
+    "다이아1","다이아2","다이아3","신화1","신화2","신화3","전설1","전설2","전설3",
+    "마스터1","마스터2","마스터3","프로",
+  ];
+
+  // 이 브라우저만의 익명 세션 ID (내가 올린 글만 삭제 가능하게 하는 용도)
+  function getSessionId() {
+    let id = localStorage.getItem("lobbySessionId");
+    if (!id) {
+      id = "s_" + Math.random().toString(36).slice(2) + Date.now().toString(36);
+      localStorage.setItem("lobbySessionId", id);
+    }
+    return id;
+  }
+
+  const categoryEl = document.getElementById("lobby-category");
+  const modeEl = document.getElementById("lobby-mode");
+  const showdownTypeEl = document.getElementById("lobby-showdown-type");
+  const groupGeneralEl = document.getElementById("lobby-group-general");
+  const groupShowdownEl = document.getElementById("lobby-group-showdown");
+  const groupRankedEl = document.getElementById("lobby-group-ranked");
+  const groupCeEl = document.getElementById("lobby-group-ce");
+  const linkEl = document.getElementById("lobby-link");
+  const linkErrorEl = document.getElementById("lobby-link-error");
+  const statusEl = document.getElementById("lobby-status");
+  const listEl = document.getElementById("lobby-list");
+
+  // select 채우기 (트로피 구간 / 티어 옵션 공통 삽입)
+  function fillOptions(select, values, placeholder) {
+    select.innerHTML = `<option value="">${placeholder}</option>` +
+      values.map(v => `<option value="${v}">${v}</option>`).join("");
+  }
+  document.querySelectorAll(".lobby-trophy-select").forEach(sel => fillOptions(sel, TROPHY_RANGES, "선택하세요"));
+  document.querySelectorAll(".lobby-tier-select").forEach(sel => fillOptions(sel, TIER_OPTIONS, "선택하세요"));
+
+  window.__lobbyOnCategoryChange = function () {
+    const cat = categoryEl.value;
+    groupGeneralEl.style.display = cat === "일반" ? "" : "none";
+    groupRankedEl.style.display = cat === "경쟁전" ? "" : "none";
+    groupCeEl.style.display = (cat === "챌린지" || cat === "이벤트") ? "" : "none";
+    if (cat !== "일반") groupShowdownEl.style.display = "none";
+  };
+
+  window.__lobbyOnModeChange = function () {
+    groupShowdownEl.style.display = modeEl.value === "쇼다운" ? "" : "none";
+  };
+
+  function escapeHtml(s) {
+    return (s || "").replace(/[&<>"']/g, (c) => ({
+      "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;",
+    }[c]));
+  }
+
+  function timeAgo(iso) {
+    const diffMin = Math.max(0, Math.floor((Date.now() - new Date(iso).getTime()) / 60000));
+    if (diffMin < 1) return "방금 전";
+    return `${diffMin}분 전`;
+  }
+
+  // 카테고리별로 목록에 보여줄 요약 줄을 다르게 구성
+  function summaryLine(r) {
+    if (r.category === "일반") {
+      const modeLabel = r.mode === "쇼다운" && r.showdown_type ? `쇼다운(${r.showdown_type})` : r.mode;
+      const parts = [modeLabel].filter(Boolean);
+      if (r.my_trophy_range) parts.push(`내 트로피 ${r.my_trophy_range}`);
+      if (r.want_trophy_range) parts.push(`구하는 팀원 ${r.want_trophy_range}`);
+      return parts.join(" · ");
+    }
+    if (r.category === "경쟁전") {
+      const parts = [];
+      if (r.my_highest_tier || r.my_current_tier) parts.push(`내 최고/현재: ${r.my_highest_tier || "-"} / ${r.my_current_tier || "-"}`);
+      if (r.want_min_highest_tier || r.want_current_tier) parts.push(`구하는 팀원 최소최고/현재: ${r.want_min_highest_tier || "-"} / ${r.want_current_tier || "-"}`);
+      return parts.join(" · ");
+    }
+    if (r.category === "챌린지" || r.category === "이벤트") {
+      const parts = [];
+      if (r.my_highest_tier) parts.push(`내 최고 티어 ${r.my_highest_tier}`);
+      if (r.want_min_highest_tier) parts.push(`구하는 팀원 최소 최고 티어 ${r.want_min_highest_tier}`);
+      return parts.join(" · ");
+    }
+    return ""; // 보스전은 별도 요약 없음
+  }
+
+  const CATEGORY_ORDER = ["일반", "보스전", "경쟁전", "챌린지", "이벤트"];
+  const filterBarEl = document.getElementById("lobby-filter-bar");
+  let currentFilter = "전체";
+  let lobbyRowsCache = []; // 마지막으로 불러온 전체 목록 (필터 전환 시 재요청 없이 바로 다시 그림)
+
+  function renderCard(r, mySession) {
+    const isMine = r.session_id === mySession;
+    const linkOk = r.invite_link && INVITE_LINK_PATTERN.test(r.invite_link);
+    const summary = summaryLine(r);
+    return `
+      <div style="border:1px solid #eee;border-radius:10px;padding:12px;margin-bottom:8px;display:flex;justify-content:space-between;align-items:flex-start;gap:10px;">
+        <div style="min-width:0;">
+          <div style="font-size:11px;color:#999;">${timeAgo(r.created_at)}</div>
+          ${summary ? `<div style="font-size:13px;font-weight:600;margin-top:2px;color:#333;">${escapeHtml(summary)}</div>` : ""}
+          ${linkOk ? `<a href="${escapeHtml(r.invite_link)}" target="_blank" rel="noopener noreferrer" style="display:inline-block;margin-top:6px;font-size:12px;color:#1a73e8;">게임방 참가하기 ↗</a>` : ""}
+        </div>
+        ${isMine ? `<button onclick="__lobbyDelete(${r.id})" style="flex-shrink:0;padding:4px 10px;border-radius:6px;border:none;cursor:pointer;background:#eee;color:#555;font-size:12px;">삭제</button>` : ""}
+      </div>`;
+  }
+
+  function renderFilterBar() {
+    const counts = { 전체: lobbyRowsCache.length };
+    for (const cat of CATEGORY_ORDER) counts[cat] = lobbyRowsCache.filter(r => (r.category || "기타") === cat).length;
+    const cats = ["전체", ...CATEGORY_ORDER];
+    filterBarEl.innerHTML = cats.map(cat => `
+      <button onclick="__lobbySetFilter('${cat}')"
+        style="padding:8px 14px;border-radius:999px;border:none;cursor:pointer;font-size:13px;font-weight:600;
+               background:${currentFilter === cat ? "#333" : "#eee"};color:${currentFilter === cat ? "#fff" : "#555"};">
+        ${escapeHtml(cat)} (${counts[cat] ?? 0})
+      </button>`).join("");
+  }
+
+  function renderList() {
+    const mySession = getSessionId();
+    const rows = currentFilter === "전체"
+      ? lobbyRowsCache
+      : lobbyRowsCache.filter(r => (r.category || "기타") === currentFilter);
+
+    if (rows.length === 0) {
+      listEl.innerHTML = "";
+      statusEl.textContent = currentFilter === "전체"
+        ? "지금은 등록된 팀 구하기 글이 없어요."
+        : `"${currentFilter}"에 등록된 글이 아직 없어요.`;
+      return;
+    }
+    statusEl.textContent = "";
+    listEl.innerHTML = rows.map(r => renderCard(r, mySession)).join("");
+  }
+
+  window.__lobbySetFilter = function (cat) {
+    currentFilter = cat;
+    renderFilterBar();
+    renderList();
+  };
+
+  async function loadLobby() {
+    statusEl.textContent = "불러오는 중...";
+    try {
+      const sinceIso = new Date(Date.now() - MAX_AGE_MINUTES * 60000).toISOString();
+      const res = await fetch(
+        `${REST_BASE}/team_lobby?select=*&created_at=gte.${encodeURIComponent(sinceIso)}&order=created_at.desc`,
+        { headers }
+      );
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      lobbyRowsCache = await res.json();
+      renderFilterBar();
+      renderList();
+    } catch (e) {
+      statusEl.innerHTML = `목록을 불러오지 못했습니다: ${e.message}
+        <button onclick="__lobbyRefresh()" style="margin-left:6px;padding:2px 8px;border-radius:6px;border:none;cursor:pointer;background:#333;color:#fff;">새로고침</button>`;
+    }
+  }
+
+  window.__lobbySubmit = async function () {
+    const category = categoryEl.value;
+    const link = linkEl.value.trim();
+    linkErrorEl.style.display = "none";
+
+    if (!category) {
+      statusEl.textContent = "모드 종류를 선택해주세요.";
+      return;
+    }
+    if (link && !INVITE_LINK_PATTERN.test(link)) {
+      linkErrorEl.style.display = "block";
+      return;
+    }
+
+    const payload = {
+      nickname: "익명", // 닉네임 입력칸을 없애서 고정값으로 채움 (DB의 not null 제약 때문)
+      category,
+      invite_link: link || null,
+      note: null,
+      session_id: getSessionId(),
+      mode: null, showdown_type: null,
+      my_trophy_range: null, want_trophy_range: null,
+      my_highest_tier: null, my_current_tier: null,
+      want_min_highest_tier: null, want_current_tier: null,
+    };
+
+    if (category === "일반") {
+      const mode = modeEl.value;
+      if (!mode) { statusEl.textContent = "세부 모드를 선택해주세요."; return; }
+      if (mode === "쇼다운" && !showdownTypeEl.value) { statusEl.textContent = "쇼다운 인원(2인/3인)을 선택해주세요."; return; }
+      payload.mode = mode;
+      payload.showdown_type = mode === "쇼다운" ? showdownTypeEl.value : null;
+      payload.my_trophy_range = document.getElementById("lobby-my-trophy").value || null;
+      payload.want_trophy_range = document.getElementById("lobby-want-trophy").value || null;
+    } else if (category === "경쟁전") {
+      payload.my_highest_tier = document.getElementById("lobby-ranked-my-highest").value || null;
+      payload.my_current_tier = document.getElementById("lobby-ranked-my-current").value || null;
+      payload.want_min_highest_tier = document.getElementById("lobby-ranked-want-highest").value || null;
+      payload.want_current_tier = document.getElementById("lobby-ranked-want-current").value || null;
+    } else if (category === "챌린지" || category === "이벤트") {
+      payload.my_highest_tier = document.getElementById("lobby-ce-my-highest").value || null;
+      payload.want_min_highest_tier = document.getElementById("lobby-ce-want-highest").value || null;
+    }
+    // 보스전은 추가 필드 없음
+
+    try {
+      const res = await fetch(`${REST_BASE}/team_lobby`, {
+        method: "POST",
+        headers,
+        body: JSON.stringify(payload),
+      });
+      if (!res.ok) {
+        const errBody = await res.text();
+        throw new Error(`HTTP ${res.status} ${errBody}`);
+      }
+      linkEl.value = "";
+      loadLobby();
+    } catch (e) {
+      statusEl.textContent = "등록하지 못했습니다: " + e.message;
+    }
+  };
+
+  window.__lobbyDelete = async function (id) {
+    try {
+      const res = await fetch(`${REST_BASE}/team_lobby?id=eq.${id}`, {
+        method: "DELETE",
+        headers,
+      });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      loadLobby();
+    } catch (e) {
+      statusEl.textContent = "삭제하지 못했습니다: " + e.message;
+    }
+  };
+
+  window.__lobbyRefresh = loadLobby;
+
+  // 팀 구하기 탭을 보고 있는 동안 20초마다 자동 새로고침
+  setInterval(() => {
+    const section = document.getElementById("lobby-section");
+    if (section && section.style.display !== "none") loadLobby();
+  }, 20000);
 })();
 </script>
 
