@@ -984,7 +984,7 @@ button.ghost.danger{ color:var(--red); border-color:#5A2E3A; }
 
     <div style="margin-bottom:8px;">
       <label style="display:block;font-size:12px;color:#666;margin-bottom:4px;">
-        게임방 초대 링크 (선택 — 아래 형식만 허용됩니다)
+        게임방 초대 링크 (필수 — 아래 형식만 허용됩니다)
       </label>
       <input id="lobby-link" type="text" placeholder="https://link.brawlstars.com/invite/gameroom/kr/?tag=XXXXXXX"
         style="width:100%;box-sizing:border-box;padding:8px;border-radius:6px;border:1px solid #ccc;font-size:13px;">
@@ -1190,7 +1190,7 @@ button.ghost.danger{ color:var(--red); border-color:#5A2E3A; }
     "마스터1","마스터2","마스터3","프로",
   ];
 
-  // 이 브라우저만의 익명 세션 ID (내가 올린 글만 삭제 가능하게 하는 용도)
+  // 이 브라우저만의 익명 세션 ID (표시용 - "내 글"인지 1차 구분에만 씀)
   function getSessionId() {
     let id = localStorage.getItem("lobbySessionId");
     if (!id) {
@@ -1198,6 +1198,22 @@ button.ghost.danger{ color:var(--red); border-color:#5A2E3A; }
       localStorage.setItem("lobbySessionId", id);
     }
     return id;
+  }
+
+  // 글 하나당 랜덤 삭제 토큰 생성 (아무도 못 맞히는 긴 무작위 문자열)
+  function generateDeleteToken() {
+    return "t_" + Array.from({ length: 24 }, () => Math.random().toString(36)[2] || "0").join("");
+  }
+
+  // 내가 올린 글의 (id -> delete_token) 매핑을 이 브라우저에만 저장해둠
+  function getMyTokens() {
+    try { return JSON.parse(localStorage.getItem("lobbyMyTokens") || "{}"); }
+    catch { return {}; }
+  }
+  function saveMyToken(id, token) {
+    const map = getMyTokens();
+    map[id] = token;
+    localStorage.setItem("lobbyMyTokens", JSON.stringify(map));
   }
 
   const categoryEl = document.getElementById("lobby-category");
@@ -1274,7 +1290,7 @@ button.ghost.danger{ color:var(--red); border-color:#5A2E3A; }
   let lobbyRowsCache = []; // 마지막으로 불러온 전체 목록 (필터 전환 시 재요청 없이 바로 다시 그림)
 
   function renderCard(r, mySession) {
-    const isMine = r.session_id === mySession;
+    const isMine = Object.prototype.hasOwnProperty.call(getMyTokens(), String(r.id));
     const linkOk = r.invite_link && INVITE_LINK_PATTERN.test(r.invite_link);
     const summary = summaryLine(r);
     return `
@@ -1328,7 +1344,7 @@ button.ghost.danger{ color:var(--red); border-color:#5A2E3A; }
     try {
       const sinceIso = new Date(Date.now() - MAX_AGE_MINUTES * 60000).toISOString();
       const res = await fetch(
-        `${REST_BASE}/team_lobby?select=*&created_at=gte.${encodeURIComponent(sinceIso)}&order=created_at.desc`,
+        `${REST_BASE}/team_lobby?select=id,category,mode,showdown_type,my_trophy_range,want_trophy_range,my_highest_tier,my_current_tier,want_min_highest_tier,want_current_tier,invite_link,created_at&created_at=gte.${encodeURIComponent(sinceIso)}&order=created_at.desc`,
         { headers }
       );
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
@@ -1350,17 +1366,19 @@ button.ghost.danger{ color:var(--red); border-color:#5A2E3A; }
       statusEl.textContent = "모드 종류를 선택해주세요.";
       return;
     }
-    if (link && !INVITE_LINK_PATTERN.test(link)) {
+    if (!INVITE_LINK_PATTERN.test(link)) {
       linkErrorEl.style.display = "block";
       return;
     }
 
+    const deleteToken = generateDeleteToken();
     const payload = {
       nickname: "익명", // 닉네임 입력칸을 없애서 고정값으로 채움 (DB의 not null 제약 때문)
       category,
       invite_link: link || null,
       note: null,
       session_id: getSessionId(),
+      delete_token: deleteToken,
       mode: null, showdown_type: null,
       my_trophy_range: null, want_trophy_range: null,
       my_highest_tier: null, my_current_tier: null,
@@ -1389,12 +1407,16 @@ button.ghost.danger{ color:var(--red); border-color:#5A2E3A; }
     try {
       const res = await fetch(`${REST_BASE}/team_lobby`, {
         method: "POST",
-        headers,
+        headers: { ...headers, Prefer: "return=representation" },
         body: JSON.stringify(payload),
       });
       if (!res.ok) {
         const errBody = await res.text();
         throw new Error(`HTTP ${res.status} ${errBody}`);
+      }
+      const inserted = await res.json();
+      if (inserted && inserted[0]) {
+        saveMyToken(inserted[0].id, deleteToken);
       }
       linkEl.value = "";
       loadLobby();
@@ -1404,12 +1426,22 @@ button.ghost.danger{ color:var(--red); border-color:#5A2E3A; }
   };
 
   window.__lobbyDelete = async function (id) {
+    const myToken = getMyTokens()[String(id)];
+    if (!myToken) {
+      statusEl.textContent = "이 글을 삭제할 권한 정보가 이 브라우저에 없어요.";
+      return;
+    }
     try {
-      const res = await fetch(`${REST_BASE}/team_lobby?id=eq.${id}`, {
-        method: "DELETE",
-        headers,
-      });
+      const res = await fetch(
+        `${REST_BASE}/team_lobby?id=eq.${id}&delete_token=eq.${encodeURIComponent(myToken)}`,
+        { method: "DELETE", headers: { ...headers, Prefer: "return=representation" } }
+      );
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const deleted = await res.json();
+      if (!deleted || deleted.length === 0) {
+        statusEl.textContent = "삭제 권한이 확인되지 않았어요.";
+        return;
+      }
       loadLobby();
     } catch (e) {
       statusEl.textContent = "삭제하지 못했습니다: " + e.message;
