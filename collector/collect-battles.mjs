@@ -184,7 +184,6 @@ async function processBattle(battle, sourceTag, sourceRankedRank, mapWhitelist) 
         mode: battleInfo.mode ?? event.mode,
         map_id: event.id ?? null,
         ranked_rank: sourceRankedRank,
-        raw_battle: battle,
       },
       { onConflict: "battle_hash" }
     )
