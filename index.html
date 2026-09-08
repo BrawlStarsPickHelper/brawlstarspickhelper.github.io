@@ -333,7 +333,7 @@ function usedSet(){
    ============================================================ */
 const MATCHUP_SUPABASE_URL = "https://qtilfotrhyjadlqwrznz.supabase.co";
 const MATCHUP_SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InF0aWxmb3RyaHlqYWRscXdyem56Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODgyODQ4MTIsImV4cCI6MjEwMzg2MDgxMn0.tdQC2nHcLckPSwyTrHm31eOvQ3iWFahrvX-9oimzcXQ";
-const MATCHUP_MIN_GAMES = 50; // 이 판수 이상인 상성만 실제 데이터로 사용, 미만이면 고정 리스트로 대체
+const MATCHUP_MIN_GAMES = 100; // 이 판수 이상인 상성만 실제 데이터로 사용, 미만이면 고정 리스트로 대체
 
 let matchupIndex = null;          // normName(내브롤러) -> Map(normName(상대) -> {win_rate, games})
 let matchupOpponents = null;      // 실데이터에 "상대"로 한 번이라도 등장한 이름들의 Set (normName 기준) — 상대별 커버리지 판단용
